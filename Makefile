@@ -10,7 +10,7 @@ COMBINED_HEX := $(COMBINED_DIR)/combined.hex
 APPS := $(wildcard apps/*)
 ALL_PROJECTS := bootloader $(APPS)
 
-.PHONY: all _firmware _combined clean flash flash-bootloader flash-app container-build container-shell $(ALL_PROJECTS)
+.PHONY: all _firmware _combined clean test flash flash-bootloader flash-app container-build container-shell $(ALL_PROJECTS)
 
 # ── Developer entry points (run everything inside the container) ──────────────
 all: container-build
@@ -35,6 +35,9 @@ flash-app: apps/vibe/build/vibe.bin
 clean:
 	for proj in $(ALL_PROJECTS); do $(MAKE) -C $$proj clean; done
 	rm -rf $(COMBINED_DIR)
+
+test:
+	$(MAKE) -C apps/vibe test
 
 # ── Internal targets (used inside the container / CI only) ────────────────────
 _firmware: $(ALL_PROJECTS)
