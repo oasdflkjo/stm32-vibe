@@ -27,18 +27,24 @@ CFLAGS  := $(MCU_FLAGS) $(DEFINES) $(INCLUDES) -std=c11 -Wall -Wextra -Werror -O
 ASFLAGS := $(MCU_FLAGS)
 LDFLAGS := $(MCU_FLAGS) -Tlinker.ld -Wl,--gc-sections -Wl,-Map=$(BUILD_DIR)/$(PROJECT).map --specs=nano.specs --specs=nosys.specs
 
-APP_SRCS := \
+APP_LOCAL_SRCS := \
   src/main.c \
   src/syscalls.c \
-  src/led_task.c \
+  src/led_task.c
+
+HAL_SRCS := \
   $(SHARED)/hal_impl/stm32l1/gpio.c \
   $(SHARED)/hal_impl/stm32l1/systick.c
+
+LOCAL_OBJS := $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(APP_LOCAL_SRCS))
+HAL_OBJS   := $(patsubst $(SHARED)/%.c,$(BUILD_DIR)/shared/%.o,$(HAL_SRCS))
 
 DEVICE_SYSTEM  := $(VENDOR)/cmsis_device_l1/Source/Templates/system_stm32l1xx.c
 DEVICE_STARTUP := $(VENDOR)/cmsis_device_l1/Source/Templates/gcc/startup_stm32l152xe.s
 
 OBJS := \
-  $(patsubst $(REPO_ROOT)/%,$(BUILD_DIR)/%.o,$(patsubst src/%,$(BUILD_DIR)/%.o,$(APP_SRCS))) \
+  $(LOCAL_OBJS) \
+  $(HAL_OBJS) \
   $(BUILD_DIR)/system_stm32l1xx.o \
   $(BUILD_DIR)/startup_stm32l152xe.o
 
@@ -82,15 +88,15 @@ $(BUILD_DIR)/%.o: src/%.c | $(BUILD_DIR)
 $(BUILD_DIR)/%.o: src/%.s | $(BUILD_DIR)
 	$(CC) $(ASFLAGS) -c $< -o $@
 
+$(BUILD_DIR)/shared/%.o: $(SHARED)/%.c | $(BUILD_DIR)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
 $(BUILD_DIR)/system_stm32l1xx.o: $(DEVICE_SYSTEM) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/startup_stm32l152xe.o: $(DEVICE_STARTUP) | $(BUILD_DIR)
 	$(CC) $(ASFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/%.c.o: $(REPO_ROOT)/%.c | $(BUILD_DIR)
-	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
 
 $(ELF): $(OBJS) linker.ld
 	$(CC) $(OBJS) $(LDFLAGS) -o $@
