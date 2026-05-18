@@ -203,3 +203,4 @@ For the first blinky, the firmware can use direct register access:
 - delay with a simple busy loop
 
 This keeps the MVP small and makes the hardware behavior visible without pulling in a larger abstraction layer.
+
