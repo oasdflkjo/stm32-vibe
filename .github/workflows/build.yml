@@ -18,10 +18,13 @@ jobs:
           fetch-depth: 1
 
       - name: Install ARM toolchain
-        uses: awalsh128/cache-apt-pkgs-action@v1
-        with:
-          packages: gcc-arm-none-eabi binutils-arm-none-eabi libnewlib-arm-none-eabi make
-          version: 1.0
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            gcc-arm-none-eabi \
+            binutils-arm-none-eabi \
+            libnewlib-arm-none-eabi \
+            make
 
       - name: Build firmware
         run: make firmware
