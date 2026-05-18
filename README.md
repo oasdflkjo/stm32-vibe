@@ -1,203 +1,132 @@
 # stm32-vibe
 
-This project is an experiment in STM32 development with a deliberately small toolset and heavy use of LLM assistance.
-
-The starting target is a minimal blinky program for the ST NUCLEO-L152RE board. The first goal is not to build a full embedded framework. The goal is to prove the smallest useful path from an empty repository to firmware that toggles the on-board LED.
+STM32 development monorepo for the ST NUCLEO-L152RE. Minimal toolset, container-based builds, LLM-assisted development.
 
 ## Hardware
 
 - Board: ST NUCLEO-L152RE
 - MCU: STM32L152RE
-- User LED: LD2, green
-- LED pin: PA5 / Arduino D13
-
-The board manual filenames and public reference links are listed in `documents/documents.md`. Local PDF copies may be kept in `documents/`, but PDFs are ignored by Git so they are not committed.
-
-## Vendor Source Policy
-
-This project uses targeted ST submodules for CMSIS Core, the STM32L1 device package, and the STM32L1 HAL/LL driver:
-
-```text
-vendor/cmsis-core/
-vendor/cmsis_device_l1/
-vendor/stm32l1xx_hal_driver/
-```
-
-These are third-party sources, not project code. They are listed in `.codexignore` so normal LLM context does not get flooded by vendor files. They are also marked as vendored in `.gitattributes` for GitHub language statistics. When a specific vendor file matters, inspect that file directly.
-
-The build uses the STM32L152xE startup file and `system_stm32l1xx.c` directly from `vendor/cmsis_device_l1`; they are not copied into `src/`.
-
-After cloning this repository, initialize the targeted submodules with shallow history:
-
-```sh
-git submodule update --init --depth 1
-```
-
-Current upstream sources:
-
-```text
-vendor/cmsis_device_l1
-revision: a23ade4ccf14012085fedf862e33a536ab7ed8be
-
-vendor/stm32l1xx_hal_driver
-revision: feefd968fe50d42fd0f639d0215bfdc876f66f86
-
-vendor/cmsis-core
-revision: 2327f7224ff212b2436e5a4cadda3288143fd041
-```
-
-Third-party license files live in their canonical vendor locations:
-
-```text
-vendor/cmsis-core/LICENSE.md
-vendor/cmsis_device_l1/LICENSE.md
-vendor/stm32l1xx_hal_driver/LICENSE.md
-```
-
-The linker script is project-local and was generated for this repo from the STM32L152RE memory map: 512 KiB flash at `0x08000000` and 80 KiB RAM at `0x20000000`. It is not copied from the ST project template because the available SW4STM32 linker script contains restrictive redistribution text.
-
-The top-level `LICENSE` applies to project code. Vendor submodules keep their upstream licenses in their own repositories.
-
-## Development Style
-
-This repository intentionally avoids starting with a large generated project or IDE-specific setup.
-
-The approach:
-
-- keep the project understandable from the files in this repo
-- use plain source files, a linker script, and a small build file
-- add only the tools needed to compile, flash, and debug the MVP
-- document decisions as they are made
-- use Codex/LLMs to inspect manuals, reason about registers, and generate small changes
-
-## MVP
-
-The first milestone is:
-
-1. Build a firmware image for STM32L152RE.
-2. Configure PA5 as a GPIO output.
-3. Toggle PA5 in a simple loop.
-4. Flash the image to the NUCLEO-L152RE.
-5. See LD2 blink.
-
-## Tooling
-
-For reproducible local builds and CI, use the containerized build path. It needs either:
-
-- `podman` or `docker` for containerized builds
-
-Host tools are only needed when building without the container or when flashing/debugging hardware directly:
-
-- `arm-none-eabi-gcc`
-- `arm-none-eabi-objcopy`
-- `make`
-- `st-flash`
-- `st-info`
-- `openocd`
-
-No STM32CubeIDE project is required for the MVP. No generated HAL project is required for the MVP.
-
-Build:
-
-```sh
-make
-```
-
-`make` builds the firmware inside the container. Podman is the default container engine.
-
-Explicit Podman build:
-
-```sh
-make containerized-build
-```
-
-Containerized build with Docker:
-
-```sh
-make CONTAINER_ENGINE=docker CONTAINER_VOLUME_SUFFIX= containerized-build
-```
-
-Output:
-
-```text
-build/stm32-vibe.elf
-build/stm32-vibe.bin
-build/stm32-vibe.map
-```
-
-The raw host build target is `make firmware`. It is used inside the container and is not the normal project entry point.
-
-Flash with ST-LINK:
-
-```sh
-make flash
-```
-
-`make flash` uses `st-flash --reset` so the board should reset and start the program after flashing. If LD2 still does not start blinking, press the physical board `RESET` button once.
-
-Equivalent manual command:
-
-```sh
-st-flash --reset write build/stm32-vibe.bin 0x08000000
-```
-
-Check whether the board is visible:
-
-```sh
-make probe
-```
-
-If flashing succeeds but LD2 does not blink:
-
-- press the board `RESET` button once; this has been required on the tested setup after `st-flash`
-- confirm the visible LED is `LD2`, not the ST-LINK communication LED
-- confirm `st-info --probe` reports `STM32L1xx_Cat_5`
-- check that solder bridge `SB21` / `LD2-LED` has not been opened on the board
-
-Additional utility targets:
-
-```sh
-make reset
-make erase
-make debug-server
-make gdb
-```
-
-The debugger targets are optional. The normal flow stays build/flash first; debugger use is for diagnosis when the board does not behave as expected. `make gdb` requires `arm-none-eabi-gdb` or an override such as `make GDB=gdb-multiarch gdb`.
-
-## CI
-
-GitHub Actions builds the firmware on pushes to `main` and on pull requests. The workflow uses the same `Containerfile` as local containerized builds:
-
-```text
-.github/workflows/build.yml
-```
+- User LED: LD2, green (PA5 / Arduino D13)
 
 ## Project Layout
 
 ```text
 .
-├── LICENSE
-├── README.md
-├── Containerfile
-├── documents/
-│   └── documents.md
+├── Containerfile          # Build environment (Fedora + arm-none-eabi toolchain)
+├── Makefile               # Top-level orchestrator
+├── bootloader/            # Bootloader (0x08000000, 16KB)
+│   ├── src/
+│   ├── linker.ld
+│   └── Makefile
+├── apps/
+│   └── vibe/              # Main application (0x08004000, 496KB)
+│       ├── src/
+│       ├── linker.ld
+│       └── Makefile
+├── shared/                # Shared code across apps
 ├── vendor/
 │   ├── cmsis-core/
 │   ├── cmsis_device_l1/
 │   └── stm32l1xx_hal_driver/
-├── Makefile
-├── linker.ld
-└── src/
-    ├── main.c
-    └── syscalls.c
+└── .github/
+    └── workflows/
+        ├── build.yml          # CI: build all projects
+        └── publish-image.yml  # CI: publish container image to GHCR
 ```
 
-## First Implementation Notes
+## Flash Layout
 
-For the first blinky, the firmware can use direct register access:
+| Region      | Start        | Size  |
+|-------------|--------------|-------|
+| Bootloader  | `0x08000000` | 16 KB |
+| App (vibe)  | `0x08004000` | 496 KB |
 
-- enable GPIOA clock
+The bootloader validates the app at `0x08004000`, sets the vector table offset, then jumps to it.
+
+## Developer Workflow
+
+The only required host tool is `podman` (or `docker`). No ARM toolchain installation needed.
+
+Clone with submodules:
+
+```sh
+git clone --recurse-submodules <repo-url>
+# or after cloning:
+git submodule update --init --depth 1
+```
+
+Build everything (bootloader + app + combined hex) inside the container:
+
+```sh
+make
+```
+
+With Docker instead of Podman:
+
+```sh
+make CONTAINER_ENGINE=docker CONTAINER_VOLUME_SUFFIX=
+```
+
+Open an interactive shell inside the build container:
+
+```sh
+make container-shell
+```
+
+Build outputs:
+
+```text
+build/combined.hex        ← bootloader + app merged, ready to flash
+bootloader/build/bootloader.elf / .bin
+apps/vibe/build/vibe.elf / .bin
+```
+
+## Flashing
+
+Flash both bootloader and app in one shot (requires `st-flash` on host):
+
+```sh
+make flash
+```
+
+Flash individually:
+
+```sh
+make flash-bootloader     # st-flash to 0x08000000
+make flash-app            # st-flash to 0x08004000
+```
+
+Utility targets (run on host):
+
+```sh
+make -C apps/vibe probe         # check ST-LINK is visible
+make -C apps/vibe reset         # reset the board
+make -C apps/vibe erase         # mass erase flash
+make -C apps/vibe debug-server  # start OpenOCD GDB server
+make -C apps/vibe gdb           # start GDB session
+```
+
+`make -C bootloader gdb` works the same for debugging the bootloader.
+
+## CI
+
+GitHub Actions runs on every push to `main` and on pull requests. The build job runs directly inside the container image from GHCR — same environment as local builds, no Docker-in-Docker.
+
+The container image is rebuilt and pushed to GHCR automatically when `Containerfile` changes. Trigger a manual rebuild from the Actions tab → "Publish build image".
+
+## Adding a New App
+
+1. Create `apps/<name>/` with `src/`, `linker.ld`, and a `Makefile` (copy from `apps/vibe/`)
+2. Update the flash origin in `linker.ld` to not overlap with other regions
+3. Add a `flash-<name>` target to the root `Makefile`
+4. The root `make firmware` picks it up automatically via `$(wildcard apps/*)`
+
+## Vendor Source Policy
+
+Vendor submodules are not project code. They are excluded from LLM context via `.codexignore` and marked in `.gitattributes` for GitHub language stats.
+
+License files: `vendor/*/LICENSE.md`. Project code is under the top-level `LICENSE`.
+
 - set PA5 as output
 - toggle PA5 output state
 - delay with a simple busy loop

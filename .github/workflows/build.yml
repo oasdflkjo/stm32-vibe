@@ -22,4 +22,4 @@ jobs:
           fetch-depth: 1
 
       - name: Build firmware
-        run: make firmware
+        run: make _combined

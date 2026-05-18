@@ -1,102 +1,51 @@
-PROJECT := stm32-vibe
-BUILD_DIR := build
 CONTAINER_ENGINE ?= podman
 CONTAINER_IMAGE ?= stm32-vibe-build
 CONTAINER_VOLUME_SUFFIX ?= :Z
 
 export CCACHE_DISABLE ?= 1
 
-TOOLCHAIN_PREFIX ?= arm-none-eabi-
-CC := $(TOOLCHAIN_PREFIX)gcc
-OBJCOPY := $(TOOLCHAIN_PREFIX)objcopy
-SIZE := $(TOOLCHAIN_PREFIX)size
-ST_FLASH := st-flash
-ST_INFO := st-info
-OPENOCD := openocd
-GDB ?= $(TOOLCHAIN_PREFIX)gdb
+COMBINED_DIR := build
+COMBINED_HEX := $(COMBINED_DIR)/combined.hex
 
-MCU_FLAGS := -mcpu=cortex-m3 -mthumb -mfloat-abi=soft
-DEFINES := -DSTM32L152xE
-INCLUDES := \
-  -Ivendor/cmsis-core/CMSIS/Core/Include \
-  -Ivendor/cmsis_device_l1/Include
+APPS := $(wildcard apps/*)
+ALL_PROJECTS := bootloader $(APPS)
 
-CFLAGS := $(MCU_FLAGS) $(DEFINES) $(INCLUDES) -std=c11 -Wall -Wextra -Werror -Os -ffunction-sections -fdata-sections
-ASFLAGS := $(MCU_FLAGS)
-LDFLAGS := $(MCU_FLAGS) -Tlinker.ld -Wl,--gc-sections -Wl,-Map=$(BUILD_DIR)/$(PROJECT).map --specs=nano.specs --specs=nosys.specs
+.PHONY: all _firmware _combined clean flash flash-bootloader flash-app container-build container-shell $(ALL_PROJECTS)
 
-APP_SRCS := \
-  src/main.c \
-  src/syscalls.c
-
-DEVICE_SYSTEM := vendor/cmsis_device_l1/Source/Templates/system_stm32l1xx.c
-DEVICE_STARTUP := vendor/cmsis_device_l1/Source/Templates/gcc/startup_stm32l152xe.s
-
-OBJS := \
-  $(patsubst src/%,$(BUILD_DIR)/%,$(APP_SRCS:.c=.o)) \
-  $(BUILD_DIR)/system_stm32l1xx.o \
-  $(BUILD_DIR)/startup_stm32l152xe.o
-
-ELF := $(BUILD_DIR)/$(PROJECT).elf
-BIN := $(BUILD_DIR)/$(PROJECT).bin
-
-.PHONY: all clean container-build container-shell containerized-build debug-server erase firmware flash gdb probe reset size
-
-all: containerized-build
-
-firmware: $(ELF) $(BIN) size
-
-container-build:
-	$(CONTAINER_ENGINE) build -t $(CONTAINER_IMAGE) -f Containerfile .
-
-containerized-build: container-build
-	$(CONTAINER_ENGINE) run --rm -v "$(CURDIR):/workspace$(CONTAINER_VOLUME_SUFFIX)" -w /workspace $(CONTAINER_IMAGE) make clean firmware
+# ── Developer entry points (run everything inside the container) ──────────────
+all: container-build
+	$(CONTAINER_ENGINE) run --rm -v "$(CURDIR):/workspace$(CONTAINER_VOLUME_SUFFIX)" -w /workspace $(CONTAINER_IMAGE) make _combined
 
 container-shell: container-build
 	$(CONTAINER_ENGINE) run --rm -it -v "$(CURDIR):/workspace$(CONTAINER_VOLUME_SUFFIX)" -w /workspace $(CONTAINER_IMAGE) bash
 
-$(BUILD_DIR):
-	mkdir -p $@
+container-build:
+	$(CONTAINER_ENGINE) build -t $(CONTAINER_IMAGE) -f Containerfile .
 
-$(BUILD_DIR)/%.o: src/%.c | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -c $< -o $@
+# ── Flash targets (run on host, require st-flash + USB access) ────────────────
+flash: $(COMBINED_HEX)
+	st-flash --reset --format ihex write $(COMBINED_HEX)
 
-$(BUILD_DIR)/%.o: src/%.s | $(BUILD_DIR)
-	$(CC) $(ASFLAGS) -c $< -o $@
+flash-bootloader: bootloader/build/bootloader.bin
+	st-flash --reset write bootloader/build/bootloader.bin 0x08000000
 
-$(BUILD_DIR)/system_stm32l1xx.o: $(DEVICE_SYSTEM) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/startup_stm32l152xe.o: $(DEVICE_STARTUP) | $(BUILD_DIR)
-	$(CC) $(ASFLAGS) -c $< -o $@
-
-$(ELF): $(OBJS) linker.ld
-	$(CC) $(OBJS) $(LDFLAGS) -o $@
-
-$(BIN): $(ELF)
-	$(OBJCOPY) -O binary $< $@
-
-size: $(ELF)
-	$(SIZE) $<
-
-flash: $(BIN)
-	$(ST_FLASH) --reset write $(BIN) 0x08000000
-	@echo "If LD2 does not start blinking, press the board RESET button once."
-
-probe:
-	$(ST_INFO) --probe
-
-reset:
-	$(ST_FLASH) reset
-
-erase:
-	$(ST_FLASH) erase
-
-debug-server:
-	$(OPENOCD) -f interface/stlink.cfg -f target/stm32l1.cfg
-
-gdb: $(ELF)
-	$(GDB) $(ELF)
+flash-app: apps/vibe/build/vibe.bin
+	st-flash --reset write apps/vibe/build/vibe.bin 0x08004000
 
 clean:
-	rm -rf $(BUILD_DIR)
+	for proj in $(ALL_PROJECTS); do $(MAKE) -C $$proj clean; done
+	rm -rf $(COMBINED_DIR)
+
+# ── Internal targets (used inside the container / CI only) ────────────────────
+_firmware: $(ALL_PROJECTS)
+
+$(ALL_PROJECTS):
+	$(MAKE) -C $@ firmware
+
+_combined: _firmware
+	mkdir -p $(COMBINED_DIR)
+	arm-none-eabi-objcopy -O ihex bootloader/build/bootloader.elf $(COMBINED_DIR)/bootloader.hex
+	arm-none-eabi-objcopy -O ihex apps/vibe/build/vibe.elf $(COMBINED_DIR)/vibe.hex
+	grep -v ':00000001FF' $(COMBINED_DIR)/bootloader.hex > $(COMBINED_HEX)
+	cat $(COMBINED_DIR)/vibe.hex >> $(COMBINED_HEX)
+	@echo "Combined image: $(COMBINED_HEX)"
