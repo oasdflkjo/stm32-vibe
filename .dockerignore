@@ -1,0 +1,5 @@
+.git/
+.agents/
+.codex/
+build/
+documents/*.pdf

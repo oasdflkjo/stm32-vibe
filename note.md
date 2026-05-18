@@ -1,0 +1,1 @@
+current state is first 5h codex limit on 20e plan or whatever it costs
