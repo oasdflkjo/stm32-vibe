@@ -12,7 +12,7 @@ STM32 development monorepo for the ST NUCLEO-L152RE. Minimal toolset, container-
 
 ```text
 .
-├── Containerfile          # Build environment (Fedora + arm-none-eabi toolchain)
+├── Containerfile          # Build environment (Fedora + arm-none-eabi + gcc)
 ├── Makefile               # Top-level orchestrator
 ├── bootloader/            # Bootloader (0x08000000, 16KB)
 │   ├── src/
@@ -21,24 +21,34 @@ STM32 development monorepo for the ST NUCLEO-L152RE. Minimal toolset, container-
 ├── apps/
 │   └── vibe/              # Main application (0x08004000, 496KB)
 │       ├── src/
+│       │   ├── main.c
+│       │   ├── led_task.c / .h
+│       │   └── syscalls.c
+│       ├── test/
+│       │   └── test_led_task.c
 │       ├── linker.ld
 │       └── Makefile
-├── shared/                # Shared code across apps
+├── shared/
+│   ├── hal/               # HAL interfaces (gpio.h, systick.h)
+│   └── hal_impl/
+│       ├── stm32l1/       # Real hardware implementations
+│       └── mock/          # Mock implementations for unit tests
 ├── vendor/
 │   ├── cmsis-core/
 │   ├── cmsis_device_l1/
-│   └── stm32l1xx_hal_driver/
+│   ├── stm32l1xx_hal_driver/
+│   └── unity/             # Unit test framework
 └── .github/
     └── workflows/
-        ├── build.yml          # CI: build all projects
+        ├── build.yml          # CI: build firmware + run unit tests
         └── publish-image.yml  # CI: publish container image to GHCR
 ```
 
 ## Flash Layout
 
-| Region      | Start        | Size  |
-|-------------|--------------|-------|
-| Bootloader  | `0x08000000` | 16 KB |
+| Region      | Start        | Size   |
+|-------------|--------------|--------|
+| Bootloader  | `0x08000000` | 16 KB  |
 | App (vibe)  | `0x08004000` | 496 KB |
 
 The bootloader validates the app at `0x08004000`, sets the vector table offset, then jumps to it.
@@ -61,6 +71,12 @@ Build everything (bootloader + app + combined hex) inside the container:
 make
 ```
 
+Run unit tests (host `gcc`, no cross-compilation needed):
+
+```sh
+make test
+```
+
 With Docker instead of Podman:
 
 ```sh
@@ -76,10 +92,20 @@ make container-shell
 Build outputs:
 
 ```text
-build/combined.hex        ← bootloader + app merged, ready to flash
+build/combined.hex              ← bootloader + app merged, ready to flash
 bootloader/build/bootloader.elf / .bin
 apps/vibe/build/vibe.elf / .bin
 ```
+
+## Unit Testing
+
+App logic is separated from hardware via HAL interfaces in `shared/hal/`. Tests compile against `shared/hal_impl/mock/` using the host `gcc` — no cross-compiler, no hardware needed.
+
+```sh
+make test          # build and run all tests
+```
+
+Adding a test: create `apps/<name>/test/test_<module>.c`, link it against mock HAL + Unity in the app's `Makefile`. See `apps/vibe/test/test_led_task.c` as an example.
 
 ## Flashing
 
@@ -110,7 +136,10 @@ make -C apps/vibe gdb           # start GDB session
 
 ## CI
 
-GitHub Actions runs on every push to `main` and on pull requests. The build job runs directly inside the container image from GHCR — same environment as local builds, no Docker-in-Docker.
+GitHub Actions runs on every push to `main` and on pull requests. Two steps run inside the same container job (same environment as local builds):
+
+1. **Build firmware** — cross-compiles bootloader + app, produces `combined.hex`
+2. **Run unit tests** — compiles tests with host `gcc` + mock HAL, runs them
 
 The container image is rebuilt and pushed to GHCR automatically when `Containerfile` changes. Trigger a manual rebuild from the Actions tab → "Publish build image".
 
@@ -118,6 +147,14 @@ The container image is rebuilt and pushed to GHCR automatically when `Containerf
 
 1. Create `apps/<name>/` with `src/`, `linker.ld`, and a `Makefile` (copy from `apps/vibe/`)
 2. Update the flash origin in `linker.ld` to not overlap with other regions
+3. Add a `flash-<name>` target to the root `Makefile`
+4. The root `make firmware` and `make test` pick it up automatically via `$(wildcard apps/*)`
+
+## Vendor Source Policy
+
+Vendor submodules are not project code. They are excluded from LLM context via `.codexignore` and marked in `.gitattributes` for GitHub language stats.
+
+License files: `vendor/*/LICENSE.md`. Project code is under the top-level `LICENSE`.
 3. Add a `flash-<name>` target to the root `Makefile`
 4. The root `make firmware` picks it up automatically via `$(wildcard apps/*)`
 
