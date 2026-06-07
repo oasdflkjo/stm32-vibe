@@ -25,6 +25,7 @@ SWO_BUILD_DIR ?= build/swo
 
 TRACE_MAP     := $(BUILD_DIR)/trace_map.json
 TRACE_EXTRACTOR := $(REPO_ROOT)/tools/extract_trace_map.py
+IMAGE_FINALIZER := $(REPO_ROOT)/tools/finalize_image.py
 
 MCU_FLAGS := -mcpu=cortex-m3 -mthumb -mfloat-abi=soft
 DEFINES   := -DSTM32L152xE -DTRACE_SWO_BAUD=$(SWO_BAUD)U
@@ -40,6 +41,7 @@ LDFLAGS := $(MCU_FLAGS) -Tlinker.ld -Wl,--gc-sections -Wl,-Map=$(BUILD_DIR)/$(PR
 
 APP_LOCAL_SRCS := \
   src/main.c \
+  src/app_manifest.c \
   src/led_task.c
 
 HAL_SRCS := \
@@ -143,10 +145,14 @@ $(BUILD_DIR)/startup_stm32l152xe.o: $(DEVICE_STARTUP) | $(BUILD_DIR)
 $(ELF): $(OBJS) linker.ld
 	$(CC) $(OBJS) $(LDFLAGS) -o $@
 
-$(BIN): $(ELF)
-	$(OBJCOPY) -O binary $< $@
+$(BIN): $(ELF) $(IMAGE_FINALIZER) $(REPO_ROOT)/config.mk
+	$(PYTHON) $(IMAGE_FINALIZER) \
+	  --elf $(ELF) \
+	  --bin $@ \
+	  --version $(APP_VERSION) \
+	  --objcopy $(OBJCOPY)
 
-$(TRACE_MAP): $(ELF) $(TRACE_EXTRACTOR)
+$(TRACE_MAP): $(BIN) $(TRACE_EXTRACTOR)
 	$(PYTHON) $(TRACE_EXTRACTOR) \
 	  --elf $(ELF) \
 	  --map $@ \

@@ -24,6 +24,13 @@ SECTIONS
     . = ALIGN(4);
   } > FLASH :text
 
+  .app_manifest ORIGIN(FLASH) + 0x200 :
+  {
+    KEEP(*(.app_manifest))
+  } > FLASH :text
+
+  ASSERT(SIZEOF(.app_manifest) == 16, "Application manifest has invalid size")
+
   .text :
   {
     . = ALIGN(4);

@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include "app_image.h"
 #include "app_validation.h"
 #include "fault/fault.h"
 #include "hal/itm.h"
@@ -51,12 +52,29 @@ int main(void)
     uint32_t stack_pointer = app_vectors[0];
     uint32_t reset_handler = app_vectors[1];
     uint32_t reset_cause = RCC->CSR;
+    app_image_result_t image_result;
 
     itm_init(SystemCoreClock, TRACE_SWO_BAUD);
     fault_handlers_init();
     TRACE("BOOT reset csr=%08X", reset_cause);
     RCC->CSR |= RCC_CSR_RMVF;
     TRACE("BOOT start");
+
+    image_result = app_image_validate(
+        (const uint8_t *)APP_IMAGE_START_ADDR,
+        APP_IMAGE_CAPACITY);
+    if (image_result.status != APP_IMAGE_VALID) {
+        TRACE("BOOT invalid image reason=%u", image_result.status);
+        TRACE("BOOT image size=%u version=%u",
+              image_result.image_size, image_result.version);
+        TRACE("BOOT image crc expected=%08X actual=%08X",
+              image_result.expected_crc32, image_result.calculated_crc32);
+        while (1) {
+        }
+    }
+
+    TRACE("BOOT image version=%u size=%u",
+          image_result.version, image_result.image_size);
 
     if (!app_vectors_are_valid(stack_pointer, reset_handler)) {
         TRACE("BOOT invalid app sp=%08X reset=%08X",

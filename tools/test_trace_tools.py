@@ -2,11 +2,18 @@ import json
 import struct
 import tempfile
 import unittest
+import zlib
 from pathlib import Path
 from unittest.mock import patch
 
 from tools.decode_trace import FrameDecoder, ItmDecoder, crc8, format_record, load_events
 from tools.extract_trace_map import build_map, parse_format
+from tools.finalize_image import (
+    MANIFEST_FORMAT,
+    MANIFEST_MAGIC,
+    MANIFEST_OFFSET,
+    finalize_bytes,
+)
 
 
 def make_frame(event_id: int, *args: int) -> bytes:
@@ -90,6 +97,24 @@ class TraceMapTests(unittest.TestCase):
 
         self.assertEqual(events["0"]["format"], "app")
         self.assertEqual(events["32768"]["format"], "boot")
+
+
+class ImageFinalizerTests(unittest.TestCase):
+    def test_embeds_size_crc_and_version(self) -> None:
+        image = bytes(MANIFEST_OFFSET + struct.calcsize(MANIFEST_FORMAT) + 32)
+
+        patched, manifest_bytes = finalize_bytes(image, version=7)
+        magic, image_size, image_crc32, version = struct.unpack(
+            MANIFEST_FORMAT,
+            manifest_bytes,
+        )
+        crc_image = bytearray(patched)
+        struct.pack_into("<I", crc_image, MANIFEST_OFFSET + 8, 0)
+
+        self.assertEqual(magic, MANIFEST_MAGIC)
+        self.assertEqual(image_size, len(image))
+        self.assertEqual(version, 7)
+        self.assertEqual(image_crc32, zlib.crc32(crc_image) & 0xFFFFFFFF)
 
 
 class TraceDecoderTests(unittest.TestCase):

@@ -36,6 +36,7 @@ LDFLAGS := $(MCU_FLAGS) -Tlinker.ld -Wl,--gc-sections -Wl,-Map=$(BUILD_DIR)/$(PR
 
 SRCS := \
   src/main.c \
+  src/app_image.c \
   src/app_validation.c
 
 SHARED_SRCS := \
@@ -68,9 +69,10 @@ UNITY := $(REPO_ROOT)/vendor/unity/src
 TEST_BIN := $(TEST_DIR)/test_app_validation
 TEST_SRCS := \
   test/test_app_validation.c \
+  src/app_image.c \
   src/app_validation.c \
   $(UNITY)/unity.c
-TEST_CFLAGS := -Isrc -I$(UNITY) -std=c11 -Wall -Wextra -Werror -g
+TEST_CFLAGS := -Isrc -I$(SHARED) -I$(UNITY) -std=c11 -Wall -Wextra -Werror -g
 
 test: $(TEST_BIN)
 	./$(TEST_BIN)
