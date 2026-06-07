@@ -29,10 +29,11 @@ STM32 development monorepo for the ST NUCLEO-L152RE. Minimal toolset, container-
 │       ├── linker.ld
 │       └── Makefile
 ├── shared/
-│   ├── hal/               # HAL interfaces (gpio.h, systick.h)
+│   ├── hal/               # HAL interfaces (gpio.h, systick.h, itm.h)
 │   └── hal_impl/
 │       ├── stm32l1/       # Real hardware implementations
 │       └── mock/          # Mock implementations for unit tests
+├── tools/                 # Trace map extraction and host-side decoding
 ├── vendor/
 │   ├── cmsis-core/
 │   ├── cmsis_device_l1/
@@ -136,6 +137,14 @@ make -C apps/vibe gdb           # start GDB session
 
 ## Compact SWO Tracing
 
+The trace system provides printf-style diagnostics without transmitting format
+strings or requiring developers to maintain event IDs:
+
+```c
+TRACE("SWO ready");
+TRACE("LED toggled count=%u", toggle_count);
+```
+
 Build and flash the app with SWO tracing enabled:
 
 ```sh
@@ -148,28 +157,35 @@ Read decoded trace messages in one terminal:
 ./swo_print.sh
 ```
 
-Trace calls keep the familiar format-string shape:
+Tracing is enabled by `ENABLE_SWO_TRACE`. Without that definition, every
+`TRACE(...)` call compiles to a no-op.
 
-```c
-TRACE("LED toggled count=%u", toggle_count);
-```
+### How It Works
 
-Each trace format is stored in an ELF-only `.trace_fmt` section. After linking,
-`tools/extract_trace_map.py` generates:
+1. The `TRACE(...)` macro places its format string in the ELF-only `.trace_fmt`
+   section and calls the matching zero-to-four-argument trace encoder.
+2. The linker assigns each format string an offset in that section. This offset
+   becomes the build-local 16-bit event ID, so call sites never contain manually
+   assigned IDs.
+3. After linking, `tools/extract_trace_map.py` reads the ELF symbols and format
+   section and creates:
 
 ```text
 apps/vibe/build/swo/trace_map.json
 ```
 
-The format string's offset inside `.trace_fmt` is its build-local 16-bit event
-ID. The section remains in the ELF for tooling but is not present in the raw
-binary flashed to the MCU. IDs and the map are regenerated for every build, so
-the map must be kept with its matching firmware.
+4. At runtime, the MCU sends only the event ID and zero to four 32-bit
+   arguments. The record also contains a sync marker, protocol version,
+   argument count, and CRC-8.
+5. `swo_print.sh` starts OpenOCD capture. `tools/decode_trace.py` extracts the
+   records from ITM stimulus-port packets, validates them, looks up each event
+   ID in the map, and prints the reconstructed message.
 
-Each firmware record contains a sync marker, protocol version, event ID,
-argument count, zero to four 32-bit arguments, and a CRC-8. The host decoder
-extracts ITM stimulus-port packets, validates each record, and formats it using
-the generated map.
+The `.trace_fmt` section remains available in the ELF for tooling but is not
+included in the raw binary flashed to the MCU. IDs and the map are regenerated
+on every build, so `trace_map.json` must always be kept with its matching
+firmware. This intentionally trades stable event IDs for minimal call sites and
+automatic numbering.
 
 Supported conversions are `%d`, `%i`, `%u`, `%o`, `%x`, `%X`, `%c`, and `%%`.
 Strings, floating-point values, and 64-bit arguments are rejected by the
@@ -196,17 +212,3 @@ The container image is rebuilt and pushed to GHCR automatically when `Containerf
 Vendor submodules are not project code. They are excluded from LLM context via `.codexignore` and marked in `.gitattributes` for GitHub language stats.
 
 License files: `vendor/*/LICENSE.md`. Project code is under the top-level `LICENSE`.
-3. Add a `flash-<name>` target to the root `Makefile`
-4. The root `make firmware` picks it up automatically via `$(wildcard apps/*)`
-
-## Vendor Source Policy
-
-Vendor submodules are not project code. They are excluded from LLM context via `.codexignore` and marked in `.gitattributes` for GitHub language stats.
-
-License files: `vendor/*/LICENSE.md`. Project code is under the top-level `LICENSE`.
-
-- set PA5 as output
-- toggle PA5 output state
-- delay with a simple busy loop
-
-This keeps the MVP small and makes the hardware behavior visible without pulling in a larger abstraction layer.
