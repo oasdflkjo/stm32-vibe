@@ -30,6 +30,7 @@ STM32 development monorepo for the ST NUCLEO-L152RE. Minimal toolset, container-
 │       └── Makefile
 ├── shared/
 │   ├── hal/               # HAL interfaces (gpio.h, systick.h, itm.h)
+│   ├── image/             # Shared application image format
 │   ├── libc/              # Shared no-heap newlib syscall stubs
 │   └── hal_impl/
 │       ├── stm32l1/       # Real hardware implementations
@@ -53,7 +54,8 @@ STM32 development monorepo for the ST NUCLEO-L152RE. Minimal toolset, container-
 | Bootloader  | `0x08000000` | 16 KB  |
 | App (vibe)  | `0x08004000` | 496 KB |
 
-The bootloader validates the app at `0x08004000`, sets the vector table offset, then jumps to it.
+The bootloader validates the app manifest, CRC, stack pointer, and reset vector
+at `0x08004000` before jumping to it.
 
 ## Developer Workflow
 
@@ -102,16 +104,17 @@ Build outputs:
 
 ```text
 build/combined.hex              ← bootloader + app merged, ready to flash
-bootloader/build/bootloader.elf / .bin
+bootloader/build/bootloader.elf / .bin / trace_map.json
 apps/vibe/build/vibe.elf / .bin
+apps/vibe/build/swo/vibe.elf / .bin / trace_map.json
 ```
 
 ## Unit Testing
 
 App logic is separated from hardware via HAL interfaces in `shared/hal/`. Tests
 compile against `shared/hal_impl/mock/` using the host `gcc`, with no
-cross-compiler or hardware needed. Bootloader vector validation is also tested
-as a hardware-independent module.
+cross-compiler or hardware needed. Bootloader image, CRC, and vector validation
+are also tested as hardware-independent modules.
 
 ```sh
 make test          # build and run all tests
@@ -134,11 +137,32 @@ make flash-bootloader     # st-flash to 0x08000000
 make flash-app            # st-flash to 0x08004000
 ```
 
-The bootloader validates the application stack pointer and reset vector before
+The bootloader validates the complete application image and its vectors before
 jumping. It disables SysTick and interrupts, clears pending NVIC state,
 relocates the vector table, and enters the application with its initial stack
-pointer and interrupts enabled. Invalid vectors leave the bootloader running
-for diagnosis.
+pointer and interrupts enabled. Invalid images leave the bootloader running for
+diagnosis.
+
+## Application Image Manifest
+
+Every application contains a 16-byte manifest at offset `0x200` from its flash
+base. It records a magic value, the exact image size, a CRC-32, and the
+application version from `APP_VERSION` in `config.mk`.
+
+After linking, `tools/finalize_image.py` creates the raw binary, calculates its
+CRC with the manifest CRC field treated as zero, and patches the same manifest
+into both the ELF and binary. The bootloader checks this manifest and CRC before
+it validates the vector table or runs any application code. Its SWO trace
+reports the accepted version and size, or the rejection reason and CRC values.
+
+This catches incomplete flashing, corruption, an erased application, and
+images linked for an incompatible layout. It is integrity checking, not secure
+boot: CRC-32 does not prove who produced an image. Firmware authenticity would
+require a signed manifest and a protected public key.
+
+The finalized ELF, binary, and trace map are one build artifact set. Keep them
+together because the ELF contains the patched manifest and the trace map
+contains build-local event IDs.
 
 Utility targets (run on host):
 
