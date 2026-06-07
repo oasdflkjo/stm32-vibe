@@ -2,11 +2,13 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-APP_DIR="$SCRIPT_DIR/apps/vibe"
+APP="${APP:-vibe}"
+APP_DIR="$SCRIPT_DIR/apps/$APP"
 
-SWO_LOG="${SWO_LOG:-/tmp/vibe_swo.log}"
-OPENOCD_LOG="${OPENOCD_LOG:-/tmp/vibe_openocd.log}"
+SWO_LOG="${SWO_LOG:-/tmp/${APP}_swo.log}"
+OPENOCD_LOG="${OPENOCD_LOG:-/tmp/${APP}_openocd.log}"
 TRACE_MAP="${TRACE_MAP:-$APP_DIR/build/swo/trace_map.json}"
+BOOT_TRACE_MAP="${BOOT_TRACE_MAP:-$SCRIPT_DIR/bootloader/build/trace_map.json}"
 TRACE_PID=""
 
 cleanup() {
@@ -18,10 +20,12 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
-if [[ ! -f "$TRACE_MAP" ]]; then
-    echo "swo_print.sh: missing $TRACE_MAP; run 'make -C apps/vibe flash-swo' first" >&2
-    exit 1
-fi
+for map in "$BOOT_TRACE_MAP" "$TRACE_MAP"; do
+    if [[ ! -f "$map" ]]; then
+        echo "swo_print.sh: missing $map; run 'make flash-swo' first" >&2
+        exit 1
+    fi
+done
 
 rm -f "$SWO_LOG"
 
@@ -48,6 +52,7 @@ fi
 
 echo "SWO trace running. Press Ctrl-C to stop." >&2
 python3 "$SCRIPT_DIR/tools/decode_trace.py" \
+    --map "$BOOT_TRACE_MAP" \
     --map "$TRACE_MAP" \
     --input "$SWO_LOG" \
     --follow

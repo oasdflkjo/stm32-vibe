@@ -4,13 +4,15 @@ CONTAINER_VOLUME_SUFFIX ?= :Z
 
 export CCACHE_DISABLE ?= 1
 
+APP ?= vibe
+APP_DIR := apps/$(APP)
+
 COMBINED_DIR := build
 COMBINED_HEX := $(COMBINED_DIR)/combined.hex
 
-APPS := $(wildcard apps/*)
-ALL_PROJECTS := bootloader $(APPS)
+ALL_PROJECTS := bootloader $(APP_DIR)
 
-.PHONY: all _firmware _combined clean test flash flash-bootloader flash-app container-build container-shell $(ALL_PROJECTS)
+.PHONY: all _firmware _combined clean test flash flash-swo flash-bootloader flash-app container-build container-shell $(ALL_PROJECTS)
 
 # ── Developer entry points (run everything inside the container) ──────────────
 all: container-build
@@ -29,15 +31,20 @@ flash: $(COMBINED_HEX)
 flash-bootloader: bootloader/build/bootloader.bin
 	st-flash --reset write bootloader/build/bootloader.bin 0x08000000
 
-flash-app: apps/vibe/build/vibe.bin
-	st-flash --reset write apps/vibe/build/vibe.bin 0x08004000
+flash-app:
+	$(MAKE) -C $(APP_DIR) flash
+
+flash-swo:
+	$(MAKE) -C bootloader flash
+	$(MAKE) -C $(APP_DIR) flash-swo
 
 clean:
 	for proj in $(ALL_PROJECTS); do $(MAKE) -C $$proj clean; done
 	rm -rf $(COMBINED_DIR)
 
 test:
-	$(MAKE) -C apps/vibe test
+	$(MAKE) -C bootloader test
+	$(MAKE) -C $(APP_DIR) test
 
 # ── Internal targets (used inside the container / CI only) ────────────────────
 _firmware: $(ALL_PROJECTS)
@@ -48,7 +55,7 @@ $(ALL_PROJECTS):
 _combined: _firmware
 	mkdir -p $(COMBINED_DIR)
 	arm-none-eabi-objcopy -O ihex bootloader/build/bootloader.elf $(COMBINED_DIR)/bootloader.hex
-	arm-none-eabi-objcopy -O ihex apps/vibe/build/vibe.elf $(COMBINED_DIR)/vibe.hex
+	arm-none-eabi-objcopy -O ihex $(APP_DIR)/build/$(APP).elf $(COMBINED_DIR)/$(APP).hex
 	grep -v ':00000001FF' $(COMBINED_DIR)/bootloader.hex > $(COMBINED_HEX)
-	cat $(COMBINED_DIR)/vibe.hex >> $(COMBINED_HEX)
+	cat $(COMBINED_DIR)/$(APP).hex >> $(COMBINED_HEX)
 	@echo "Combined image: $(COMBINED_HEX)"

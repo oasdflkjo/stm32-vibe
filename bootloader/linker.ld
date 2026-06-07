@@ -72,6 +72,13 @@ SECTIONS
     PROVIDE_HIDDEN(__fini_array_end = .);
   } > FLASH :text
 
+  .trace_fmt 0 (INFO) :
+  {
+    KEEP(*(.trace_fmt))
+  }
+
+  ASSERT(SIZEOF(.trace_fmt) <= 0x8000, "Boot trace format table exceeds its ID namespace")
+
   _sidata = LOADADDR(.data);
 
   .data :
@@ -98,4 +105,12 @@ SECTIONS
   . = ALIGN(8);
   _end = .;
   PROVIDE(end = .);
+
+  ASSERT(_end + _Min_Stack_Size <= ORIGIN(RAM) + LENGTH(RAM), "RAM overflowed")
+
+  /DISCARD/ :
+  {
+    *(.note*)
+    *(.comment*)
+  }
 }

@@ -13,6 +13,7 @@ STM32 development monorepo for the ST NUCLEO-L152RE. Minimal toolset, container-
 ```text
 .
 ├── Containerfile          # Build environment (Fedora + arm-none-eabi + gcc)
+├── config.mk              # Shared CPU and SWO clock configuration
 ├── Makefile               # Top-level orchestrator
 ├── bootloader/            # Bootloader (0x08000000, 16KB)
 │   ├── src/
@@ -30,6 +31,7 @@ STM32 development monorepo for the ST NUCLEO-L152RE. Minimal toolset, container-
 │       └── Makefile
 ├── shared/
 │   ├── hal/               # HAL interfaces (gpio.h, systick.h, itm.h)
+│   ├── libc/              # Shared no-heap newlib syscall stubs
 │   └── hal_impl/
 │       ├── stm32l1/       # Real hardware implementations
 │       └── mock/          # Mock implementations for unit tests
@@ -66,10 +68,17 @@ git clone --recurse-submodules <repo-url>
 git submodule update --init --depth 1
 ```
 
-Build everything (bootloader + app + combined hex) inside the container:
+Build the bootloader, selected app, and combined image inside the container:
 
 ```sh
 make
+```
+
+`vibe` is the default app. Select another app with `APP=<name>`:
+
+```sh
+make APP=my_app
+make test APP=my_app
 ```
 
 Run unit tests (host `gcc`, no cross-compilation needed):
@@ -100,7 +109,10 @@ apps/vibe/build/vibe.elf / .bin
 
 ## Unit Testing
 
-App logic is separated from hardware via HAL interfaces in `shared/hal/`. Tests compile against `shared/hal_impl/mock/` using the host `gcc` — no cross-compiler, no hardware needed.
+App logic is separated from hardware via HAL interfaces in `shared/hal/`. Tests
+compile against `shared/hal_impl/mock/` using the host `gcc`, with no
+cross-compiler or hardware needed. Bootloader vector validation is also tested
+as a hardware-independent module.
 
 ```sh
 make test          # build and run all tests
@@ -123,6 +135,12 @@ make flash-bootloader     # st-flash to 0x08000000
 make flash-app            # st-flash to 0x08004000
 ```
 
+The bootloader validates the application stack pointer and reset vector before
+jumping. It disables SysTick and interrupts, clears pending NVIC state,
+relocates the vector table, and enters the application with its initial stack
+pointer and interrupts enabled. Invalid vectors leave the bootloader running
+for diagnosis.
+
 Utility targets (run on host):
 
 ```sh
@@ -137,18 +155,20 @@ make -C apps/vibe gdb           # start GDB session
 
 ## Compact SWO Tracing
 
-The trace system provides printf-style diagnostics without transmitting format
-strings or requiring developers to maintain event IDs:
+The trace system provides printf-style diagnostics in both the bootloader and
+application without transmitting format strings or requiring developers to
+maintain event IDs:
 
 ```c
+TRACE("BOOT jump app");
 TRACE("SWO ready");
 TRACE("LED toggled count=%u", toggle_count);
 ```
 
-Build and flash the app with SWO tracing enabled:
+Build and flash both images with application tracing enabled:
 
 ```sh
-make -C apps/vibe flash-swo
+make flash-swo
 ```
 
 Read decoded trace messages in one terminal:
@@ -157,35 +177,49 @@ Read decoded trace messages in one terminal:
 ./swo_print.sh
 ```
 
-Tracing is enabled by `ENABLE_SWO_TRACE`. Without that definition, every
-`TRACE(...)` call compiles to a no-op.
+For another selected app, use the same `APP` value for both commands:
+
+```sh
+make flash-swo APP=my_app
+APP=my_app ./swo_print.sh
+```
+
+Bootloader tracing is always built in so reset and handoff failures remain
+observable. Application tracing is enabled by `ENABLE_SWO_TRACE`; without that
+definition, application `TRACE(...)` calls compile to no-ops.
 
 ### How It Works
 
 1. The `TRACE(...)` macro places its format string in the ELF-only `.trace_fmt`
    section and calls the matching zero-to-four-argument trace encoder.
-2. The linker assigns each format string an offset in that section. This offset
-   becomes the build-local 16-bit event ID, so call sites never contain manually
-   assigned IDs.
+2. The linker assigns each format string an offset in that section. The offset
+   becomes a build-local 16-bit event ID, so call sites never contain manually
+   assigned IDs. Application IDs use `0x0000-0x7FFF`; bootloader IDs use
+   `0x8000-0xFFFF`.
 3. After linking, `tools/extract_trace_map.py` reads the ELF symbols and format
-   section and creates:
+   sections and creates:
 
 ```text
+bootloader/build/trace_map.json
 apps/vibe/build/swo/trace_map.json
 ```
 
 4. At runtime, the MCU sends only the event ID and zero to four 32-bit
    arguments. The record also contains a sync marker, protocol version,
    argument count, and CRC-8.
-5. `swo_print.sh` starts OpenOCD capture. `tools/decode_trace.py` extracts the
-   records from ITM stimulus-port packets, validates them, looks up each event
-   ID in the map, and prints the reconstructed message.
+5. `swo_print.sh` starts OpenOCD capture. `tools/decode_trace.py` loads both
+   maps, extracts records from ITM stimulus-port packets, validates them, looks
+   up each event ID, and prints one continuous boot-to-application log.
 
 The `.trace_fmt` section remains available in the ELF for tooling but is not
 included in the raw binary flashed to the MCU. IDs and the map are regenerated
-on every build, so `trace_map.json` must always be kept with its matching
-firmware. This intentionally trades stable event IDs for minimal call sites and
-automatic numbering.
+on every build, so both maps must always be kept with their matching firmware.
+This intentionally trades stable event IDs for minimal call sites and automatic
+numbering.
+
+Trace records are serialized with a short interrupt-safe lock. If an interrupt
+tries to trace while another record is being emitted, the nested record is
+dropped instead of interleaving bytes or blocking interrupts during SWO waits.
 
 Supported conversions are `%d`, `%i`, `%u`, `%o`, `%x`, `%X`, `%c`, and `%%`.
 Strings, floating-point values, and 64-bit arguments are rejected by the
@@ -204,8 +238,19 @@ The container image is rebuilt and pushed to GHCR automatically when `Containerf
 
 1. Create `apps/<name>/` with `src/`, `linker.ld`, and a `Makefile` (copy from `apps/vibe/`)
 2. Update the flash origin in `linker.ld` to not overlap with other regions
-3. Add a `flash-<name>` target to the root `Makefile`
-4. The root `make firmware` and `make test` pick it up automatically via `$(wildcard apps/*)`
+3. Set the app's `PROJECT` name in its `Makefile`
+4. Build it with `make APP=<name>` and test it with `make test APP=<name>`
+
+## Runtime Policy
+
+The baseline intentionally provides no dynamic heap. The shared newlib syscall
+layer returns `ENOMEM` from `_sbrk()`, keeping accidental `malloc()` use from
+growing into the stack. Add an explicit allocator and linker-defined heap region
+when a project genuinely requires dynamic allocation.
+
+`config.mk` is the project-level source for the expected CPU clock and SWO baud.
+The CPU value must match the clock configured by the CMSIS system startup; the
+same value configures OpenOCD capture.
 
 ## Vendor Source Policy
 

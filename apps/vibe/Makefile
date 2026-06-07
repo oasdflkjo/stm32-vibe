@@ -3,6 +3,8 @@ BUILD_DIR := build
 TEST_DIR := build/test
 
 REPO_ROOT := ../..
+include $(REPO_ROOT)/config.mk
+
 VENDOR := $(REPO_ROOT)/vendor
 SHARED := $(REPO_ROOT)/shared
 
@@ -17,8 +19,7 @@ ST_INFO  := st-info
 OPENOCD  := openocd
 PYTHON   ?= python3
 
-SWO_CLOCK ?= 2097000
-SWO_BAUD  ?= 72000
+SWO_CLOCK ?= $(CPU_HZ)
 SWO_LOG   ?= /tmp/$(PROJECT)_swo.log
 SWO_BUILD_DIR ?= build/swo
 
@@ -26,7 +27,7 @@ TRACE_MAP     := $(BUILD_DIR)/trace_map.json
 TRACE_EXTRACTOR := $(REPO_ROOT)/tools/extract_trace_map.py
 
 MCU_FLAGS := -mcpu=cortex-m3 -mthumb -mfloat-abi=soft
-DEFINES   := -DSTM32L152xE
+DEFINES   := -DSTM32L152xE -DTRACE_SWO_BAUD=$(SWO_BAUD)U
 INCLUDES  := \
   -Isrc \
   -I$(SHARED) \
@@ -39,10 +40,11 @@ LDFLAGS := $(MCU_FLAGS) -Tlinker.ld -Wl,--gc-sections -Wl,-Map=$(BUILD_DIR)/$(PR
 
 APP_LOCAL_SRCS := \
   src/main.c \
-  src/syscalls.c \
   src/led_task.c
 
 HAL_SRCS := \
+  $(SHARED)/libc/syscalls.c \
+  $(SHARED)/hal_impl/stm32l1/critical.c \
   $(SHARED)/hal_impl/stm32l1/gpio.c \
   $(SHARED)/hal_impl/stm32l1/systick.c \
   $(SHARED)/hal_impl/stm32l1/itm.c \
@@ -80,6 +82,7 @@ TEST_LED_SRCS := \
 TEST_TRACE_SRCS := \
   test/test_trace.c \
   $(SHARED)/trace/trace.c \
+  $(SHARED)/hal_impl/mock/critical.c \
   $(SHARED)/hal_impl/mock/itm.c \
   $(UNITY)/unity.c
 
@@ -132,6 +135,7 @@ $(TRACE_MAP): $(ELF) $(TRACE_EXTRACTOR)
 	$(PYTHON) $(TRACE_EXTRACTOR) \
 	  --elf $(ELF) \
 	  --map $@ \
+	  --image app \
 	  --nm $(NM) \
 	  --objcopy $(OBJCOPY)
 
@@ -164,9 +168,10 @@ gdb: $(ELF)
 swo-trace:
 	$(OPENOCD) -f interface/stlink.cfg -f target/stm32l1.cfg \
 	  -c "init" \
+	  -c "reset halt" \
 	  -c "stm32l1.tpiu configure -protocol uart -traceclk $(SWO_CLOCK) -pin-freq $(SWO_BAUD) -formatter 0 -output $(SWO_LOG)" \
 	  -c "stm32l1.tpiu enable" \
-	  -c "reset run"
+	  -c "resume"
 
 clean:
 	rm -rf $(BUILD_DIR)

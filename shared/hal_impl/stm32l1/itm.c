@@ -16,7 +16,19 @@ static uint8_t itm_ready = 0U;
 
 void itm_init(uint32_t cpu_hz, uint32_t swo_baud)
 {
+    uint32_t prescaler;
+
     if ((cpu_hz == 0U) || (swo_baud == 0U)) {
+        return;
+    }
+
+    prescaler = (cpu_hz / swo_baud) - 1U;
+    if (((CoreDebug->DEMCR & CoreDebug_DEMCR_TRCENA_Msk) != 0U) &&
+        ((ITM->TCR & ITM_TCR_ITMENA_Msk) != 0U) &&
+        ((ITM->TER & 1U) != 0U) &&
+        (TPIU->ACPR == prescaler) &&
+        (TPIU->SPPR == 2U)) {
+        itm_ready = 1U;
         return;
     }
 
@@ -27,7 +39,7 @@ void itm_init(uint32_t cpu_hz, uint32_t swo_baud)
     DBGMCU->CR |= DBGMCU_CR_TRACE_IOEN;
 
     /* 2. Configure TPIU */
-    TPIU->ACPR = (cpu_hz / swo_baud) - 1U; /* baud prescaler          */
+    TPIU->ACPR = prescaler;                 /* baud prescaler          */
     TPIU->SPPR = 2U;                        /* NRZ (async SWO) format  */
     TPIU->FFCR = 0x100U;                    /* enable continuous format */
 

@@ -1,9 +1,11 @@
+import json
 import struct
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from tools.decode_trace import FrameDecoder, ItmDecoder, crc8, format_record
+from tools.decode_trace import FrameDecoder, ItmDecoder, crc8, format_record, load_events
 from tools.extract_trace_map import build_map, parse_format
 
 
@@ -45,6 +47,49 @@ class TraceMapTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(ValueError, "format expects 1 arguments"):
                 build_map(Path("firmware.elf"), "nm", "objcopy")
+
+    def test_applies_image_id_namespace(self) -> None:
+        format_bytes = b"boot\0"
+        symbols = [(0, len(format_bytes), 0, "trace_format_0_0")]
+
+        with (
+            patch("tools.extract_trace_map.read_symbols", return_value=symbols),
+            patch(
+                "tools.extract_trace_map.read_trace_section",
+                return_value=format_bytes,
+            ),
+        ):
+            trace_map = build_map(
+                Path("bootloader.elf"),
+                "nm",
+                "objcopy",
+                id_base=0x8000,
+                image="bootloader",
+            )
+
+        self.assertEqual(trace_map["image"], "bootloader")
+        self.assertEqual(trace_map["events"]["32768"]["format"], "boot")
+
+    def test_loads_non_overlapping_maps(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            directory_path = Path(directory)
+            app_map = directory_path / "app.json"
+            boot_map = directory_path / "boot.json"
+            app_map.write_text(
+                json.dumps({"events": {"0": {"format": "app", "arg_types": []}}}),
+                encoding="utf-8",
+            )
+            boot_map.write_text(
+                json.dumps(
+                    {"events": {"32768": {"format": "boot", "arg_types": []}}}
+                ),
+                encoding="utf-8",
+            )
+
+            events = load_events([boot_map, app_map])
+
+        self.assertEqual(events["0"]["format"], "app")
+        self.assertEqual(events["32768"]["format"], "boot")
 
 
 class TraceDecoderTests(unittest.TestCase):

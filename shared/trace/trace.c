@@ -1,4 +1,5 @@
 #include "trace/trace.h"
+#include "hal/critical.h"
 #include "hal/itm.h"
 #include <stddef.h>
 
@@ -6,6 +7,28 @@
 #define TRACE_SYNC_1 0x5AU
 #define TRACE_VERSION 1U
 #define TRACE_MAX_ARGS 4U
+
+static uint8_t trace_busy;
+
+static int trace_try_lock(void)
+{
+    uint32_t critical_state = critical_section_enter();
+    int acquired = trace_busy == 0U;
+
+    if (acquired) {
+        trace_busy = 1U;
+    }
+
+    critical_section_exit(critical_state);
+    return acquired;
+}
+
+static void trace_unlock(void)
+{
+    uint32_t critical_state = critical_section_enter();
+    trace_busy = 0U;
+    critical_section_exit(critical_state);
+}
 
 static uint8_t crc8_update(uint8_t crc, uint8_t value)
 {
@@ -25,7 +48,7 @@ static void trace_emit_record(uint16_t event_id, uint8_t arg_count,
 {
     uint8_t crc = 0U;
 
-    if (arg_count > TRACE_MAX_ARGS) {
+    if ((arg_count > TRACE_MAX_ARGS) || !trace_try_lock()) {
         return;
     }
 
@@ -55,6 +78,7 @@ static void trace_emit_record(uint16_t event_id, uint8_t arg_count,
     }
 
     itm_putchar(crc);
+    trace_unlock();
 }
 
 void trace_emit0(uint16_t event_id)
