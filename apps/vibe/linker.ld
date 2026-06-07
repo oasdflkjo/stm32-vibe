@@ -77,7 +77,7 @@ SECTIONS
     KEEP(*(.trace_fmt))
   }
 
-  ASSERT(SIZEOF(.trace_fmt) <= 0x10000, "Trace format table exceeds 16-bit IDs")
+  ASSERT(SIZEOF(.trace_fmt) <= 0x8000, "App trace format table exceeds its ID namespace")
 
   _sidata = LOADADDR(.data);
 

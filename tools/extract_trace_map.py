@@ -98,18 +98,25 @@ def read_trace_section(objcopy: str, elf: Path) -> bytes:
         return output_path.read_bytes()
 
 
-def build_map(elf: Path, nm: str, objcopy: str) -> dict:
+def build_map(
+    elf: Path,
+    nm: str,
+    objcopy: str,
+    id_base: int = 0,
+    image: str = "firmware",
+) -> dict:
     symbols = read_symbols(nm, elf)
     section = read_trace_section(objcopy, elf) if symbols else b""
     events = {}
 
-    for event_id, size, argument_count, symbol_name in symbols:
+    for section_offset, size, argument_count, symbol_name in symbols:
+        event_id = id_base + section_offset
         if event_id > 0xFFFF:
             raise ValueError(f"{symbol_name}: trace ID exceeds 16 bits")
-        if event_id + size > len(section):
+        if section_offset + size > len(section):
             raise ValueError(f"{symbol_name}: symbol lies outside .trace_fmt")
 
-        raw_format = section[event_id:event_id + size]
+        raw_format = section[section_offset:section_offset + size]
         if not raw_format.endswith(b"\0"):
             raise ValueError(f"{symbol_name}: format string is not null terminated")
 
@@ -127,6 +134,7 @@ def build_map(elf: Path, nm: str, objcopy: str) -> dict:
 
     return {
         "schema": 1,
+        "image": image,
         "protocol": {
             "sync": "a55a",
             "version": 1,
@@ -148,12 +156,20 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--elf", required=True, type=Path)
     parser.add_argument("--map", required=True, dest="map_path", type=Path)
+    parser.add_argument("--image", default="firmware")
+    parser.add_argument("--id-base", default=0, type=lambda value: int(value, 0))
     parser.add_argument("--nm", default="arm-none-eabi-nm")
     parser.add_argument("--objcopy", default="arm-none-eabi-objcopy")
     args = parser.parse_args()
 
     try:
-        trace_map = build_map(args.elf, args.nm, args.objcopy)
+        trace_map = build_map(
+            args.elf,
+            args.nm,
+            args.objcopy,
+            args.id_base,
+            args.image,
+        )
     except (OSError, UnicodeDecodeError, ValueError, subprocess.CalledProcessError) as error:
         print(f"extract_trace_map.py: {error}", file=sys.stderr)
         return 1

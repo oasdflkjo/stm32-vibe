@@ -2,6 +2,10 @@
 
 #include <stdint.h>
 
+#ifndef TRACE_ID_BASE
+#define TRACE_ID_BASE 0U
+#endif
+
 void trace_emit0(uint16_t event_id);
 void trace_emit1(uint16_t event_id, uint32_t arg0);
 void trace_emit2(uint16_t event_id, uint32_t arg0, uint32_t arg1);
@@ -23,7 +27,8 @@ void trace_emit4(uint16_t event_id, uint32_t arg0, uint32_t arg1,
         __attribute__((section(".trace_fmt"), used, aligned(1))) = format
 
 #define TRACE_DETAIL_ID(count, counter) \
-    ((uint16_t)(uintptr_t)TRACE_DETAIL_FORMAT_NAME(count, counter))
+    ((uint16_t)(TRACE_ID_BASE + \
+                (uintptr_t)TRACE_DETAIL_FORMAT_NAME(count, counter)))
 
 #define TRACE_DETAIL_CALL0(counter, format)                                   \
     do {                                                                       \

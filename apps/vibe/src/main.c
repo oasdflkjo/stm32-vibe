@@ -5,7 +5,6 @@
 #include "hal/itm.h"
 #include "stm32l1xx.h"
 
-#define SWO_BAUD 72000U
 #endif
 
 int main(void)
@@ -17,7 +16,7 @@ int main(void)
     led_task_init();
 
 #ifdef ENABLE_SWO_TRACE
-    itm_init(SystemCoreClock, SWO_BAUD);
+    itm_init(SystemCoreClock, TRACE_SWO_BAUD);
 #endif
     TRACE("SWO ready");
 

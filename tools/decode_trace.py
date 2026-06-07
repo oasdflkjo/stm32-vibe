@@ -173,9 +173,21 @@ def format_record(event: dict, raw_args: list[int]) -> str:
     return normalize_format(event["format"]) % tuple(values)
 
 
-def decode_stream(map_path: Path, input_path: Path, follow: bool) -> int:
-    trace_map = json.loads(map_path.read_text(encoding="utf-8"))
-    events = trace_map["events"]
+def load_events(map_paths: list[Path]) -> dict:
+    events = {}
+
+    for map_path in map_paths:
+        trace_map = json.loads(map_path.read_text(encoding="utf-8"))
+        for event_id, event in trace_map["events"].items():
+            if event_id in events:
+                raise ValueError(f"duplicate trace event ID {event_id}")
+            events[event_id] = event
+
+    return events
+
+
+def decode_stream(map_paths: list[Path], input_path: Path, follow: bool) -> int:
+    events = load_events(map_paths)
     itm_decoder = ItmDecoder()
     frame_decoder = FrameDecoder()
 
@@ -201,13 +213,19 @@ def decode_stream(map_path: Path, input_path: Path, follow: bool) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--map", required=True, dest="map_path", type=Path)
+    parser.add_argument(
+        "--map",
+        required=True,
+        action="append",
+        dest="map_paths",
+        type=Path,
+    )
     parser.add_argument("--input", required=True, dest="input_path", type=Path)
     parser.add_argument("--follow", action="store_true")
     args = parser.parse_args()
 
     try:
-        return decode_stream(args.map_path, args.input_path, args.follow)
+        return decode_stream(args.map_paths, args.input_path, args.follow)
     except (OSError, ValueError, KeyError, json.JSONDecodeError) as error:
         print(f"decode_trace.py: {error}", file=sys.stderr)
         return 1
