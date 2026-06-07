@@ -59,11 +59,3 @@ void itm_putchar(uint8_t ch)
         ITM->PORT[0].u8 = ch;
     }
 }
-
-void itm_puts(const char *s)
-{
-    while (*s != '\0') {
-        itm_putchar((uint8_t)*s);
-        s++;
-    }
-}

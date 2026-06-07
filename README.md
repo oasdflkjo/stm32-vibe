@@ -151,20 +151,20 @@ Read decoded trace messages in one terminal:
 Trace calls keep the familiar format-string shape:
 
 ```c
-TRACE(LED_TOGGLED, "LED toggled count=%u", toggle_count);
+TRACE("LED toggled count=%u", toggle_count);
 ```
 
-Before firmware compilation, `tools/gen_trace.py` scans the app sources and
-generates:
+Each trace format is stored in an ELF-only `.trace_fmt` section. After linking,
+`tools/extract_trace_map.py` generates:
 
 ```text
-apps/vibe/build/swo/generated/trace_ids.h
 apps/vibe/build/swo/trace_map.json
 ```
 
-The generated header contains only deterministic 16-bit event IDs and typed
-call macros. Format strings remain in the host-side JSON map and are not linked
-into the firmware.
+The format string's offset inside `.trace_fmt` is its build-local 16-bit event
+ID. The section remains in the ELF for tooling but is not present in the raw
+binary flashed to the MCU. IDs and the map are regenerated for every build, so
+the map must be kept with its matching firmware.
 
 Each firmware record contains a sync marker, protocol version, event ID,
 argument count, zero to four 32-bit arguments, and a CRC-8. The host decoder
@@ -173,7 +173,7 @@ the generated map.
 
 Supported conversions are `%d`, `%i`, `%u`, `%o`, `%x`, `%X`, `%c`, and `%%`.
 Strings, floating-point values, and 64-bit arguments are rejected by the
-generator because they require a separate variable-length encoding.
+post-link extractor because they require a separate variable-length encoding.
 
 ## CI
 

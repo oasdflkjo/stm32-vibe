@@ -20,14 +20,6 @@ void itm_putchar(uint8_t ch)
     }
 }
 
-void itm_puts(const char *s)
-{
-    while (*s != '\0') {
-        itm_putchar((uint8_t)*s);
-        s++;
-    }
-}
-
 void itm_mock_reset(void)
 {
     output_size = 0U;

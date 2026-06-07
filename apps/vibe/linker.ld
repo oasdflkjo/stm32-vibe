@@ -72,6 +72,13 @@ SECTIONS
     PROVIDE_HIDDEN(__fini_array_end = .);
   } > FLASH :text
 
+  .trace_fmt 0 (INFO) :
+  {
+    KEEP(*(.trace_fmt))
+  }
+
+  ASSERT(SIZEOF(.trace_fmt) <= 0x10000, "Trace format table exceeds 16-bit IDs")
+
   _sidata = LOADADDR(.data);
 
   .data :

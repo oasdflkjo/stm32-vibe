@@ -9,6 +9,7 @@ SHARED := $(REPO_ROOT)/shared
 TOOLCHAIN_PREFIX ?= arm-none-eabi-
 CC      := $(TOOLCHAIN_PREFIX)gcc
 OBJCOPY := $(TOOLCHAIN_PREFIX)objcopy
+NM      := $(TOOLCHAIN_PREFIX)nm
 SIZE    := $(TOOLCHAIN_PREFIX)size
 GDB     ?= $(TOOLCHAIN_PREFIX)gdb
 ST_FLASH := st-flash
@@ -20,20 +21,15 @@ SWO_CLOCK ?= 2097000
 SWO_BAUD  ?= 72000
 SWO_LOG   ?= /tmp/$(PROJECT)_swo.log
 SWO_BUILD_DIR ?= build/swo
-SWO_TRACE_MAP ?= $(SWO_BUILD_DIR)/trace_map.json
 
-TRACE_GEN_DIR := $(BUILD_DIR)/generated
-TRACE_HEADER  := $(TRACE_GEN_DIR)/trace_ids.h
 TRACE_MAP     := $(BUILD_DIR)/trace_map.json
-TRACE_GENERATOR := $(REPO_ROOT)/tools/gen_trace.py
-TRACE_DECODER   := $(REPO_ROOT)/tools/decode_trace.py
+TRACE_EXTRACTOR := $(REPO_ROOT)/tools/extract_trace_map.py
 
 MCU_FLAGS := -mcpu=cortex-m3 -mthumb -mfloat-abi=soft
 DEFINES   := -DSTM32L152xE
 INCLUDES  := \
   -Isrc \
   -I$(SHARED) \
-  -I$(TRACE_GEN_DIR) \
   -I$(VENDOR)/cmsis-core/CMSIS/Core/Include \
   -I$(VENDOR)/cmsis_device_l1/Include
 
@@ -67,16 +63,9 @@ OBJS := \
 ELF := $(BUILD_DIR)/$(PROJECT).elf
 BIN := $(BUILD_DIR)/$(PROJECT).bin
 
-.PHONY: firmware trace-generate test clean size flash flash-swo probe reset erase debug-server gdb swo-trace swo-print
+.PHONY: firmware test clean size flash flash-swo probe reset erase debug-server gdb swo-trace
 
-firmware: $(ELF) $(BIN) size
-
-trace-generate:
-	@mkdir -p $(TRACE_GEN_DIR)
-	$(PYTHON) $(TRACE_GENERATOR) \
-	  --header $(TRACE_HEADER) \
-	  --map $(TRACE_MAP) \
-	  $(APP_LOCAL_SRCS)
+firmware: $(ELF) $(BIN) $(TRACE_MAP) size
 
 # ── Unit tests (host gcc, mock HAL) ──────────────────────────────────────────
 UNITY := $(REPO_ROOT)/vendor/unity/src
@@ -114,8 +103,6 @@ $(TEST_DIR):
 	mkdir -p $@
 
 # ── Firmware build rules ──────────────────────────────────────────────────────
-$(OBJS): | trace-generate
-
 $(BUILD_DIR):
 	mkdir -p $@
 
@@ -141,10 +128,17 @@ $(ELF): $(OBJS) linker.ld
 $(BIN): $(ELF)
 	$(OBJCOPY) -O binary $< $@
 
+$(TRACE_MAP): $(ELF) $(TRACE_EXTRACTOR)
+	$(PYTHON) $(TRACE_EXTRACTOR) \
+	  --elf $(ELF) \
+	  --map $@ \
+	  --nm $(NM) \
+	  --objcopy $(OBJCOPY)
+
 size: $(ELF)
 	$(SIZE) $<
 
-flash: $(BIN)
+flash: $(BIN) $(TRACE_MAP)
 	$(ST_FLASH) --reset write $(BIN) 0x08004000
 
 flash-swo:
@@ -173,9 +167,6 @@ swo-trace:
 	  -c "stm32l1.tpiu configure -protocol uart -traceclk $(SWO_CLOCK) -pin-freq $(SWO_BAUD) -formatter 0 -output $(SWO_LOG)" \
 	  -c "stm32l1.tpiu enable" \
 	  -c "reset run"
-
-swo-print:
-	$(PYTHON) $(TRACE_DECODER) --map $(SWO_TRACE_MAP) --input $(SWO_LOG) --follow
 
 clean:
 	rm -rf $(BUILD_DIR)

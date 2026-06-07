@@ -19,13 +19,13 @@ int main(void)
 #ifdef ENABLE_SWO_TRACE
     itm_init(SystemCoreClock, SWO_BAUD);
 #endif
-    TRACE(SWO_READY, "SWO ready");
+    TRACE("SWO ready");
 
     while (1) {
         led_task_run();
 #ifdef ENABLE_SWO_TRACE
         toggle_count++;
 #endif
-        TRACE(LED_TOGGLED, "LED toggled count=%u", toggle_count);
+        TRACE("LED toggled count=%u", toggle_count);
     }
 }

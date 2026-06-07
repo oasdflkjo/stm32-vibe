@@ -1,11 +1,10 @@
-import json
 import struct
-import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from tools.decode_trace import FrameDecoder, ItmDecoder, crc8, format_record
-from tools.gen_trace import collect_events, render_header, render_map
+from tools.extract_trace_map import build_map, parse_format
 
 
 def make_frame(event_id: int, *args: int) -> bytes:
@@ -22,37 +21,30 @@ def make_frame(event_id: int, *args: int) -> bytes:
     return b"\xA5\x5A" + bytes(body) + bytes([crc8(body)])
 
 
-class TraceGeneratorTests(unittest.TestCase):
-    def test_generates_id_macro_without_format_string(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            source = Path(directory) / "main.c"
-            source.write_text(
-                'void f(void) { TRACE(SENSOR_VALUE, "sensor=%u", 42U); }\n',
-                encoding="utf-8",
-            )
-
-            events = collect_events([source])
-            header = render_header(events)
-            trace_map = json.loads(render_map(events))
-
-            self.assertIn("TRACE_ID_SENSOR_VALUE", header)
-            self.assertIn("trace_emit1", header)
-            self.assertNotIn("sensor=%u", header)
-            self.assertEqual(
-                next(iter(trace_map["events"].values()))["format"],
-                "sensor=%u",
-            )
+class TraceMapTests(unittest.TestCase):
+    def test_parses_supported_argument_types(self) -> None:
+        self.assertEqual(
+            parse_format("signed=%d hex=%08X char=%c %%", "test"),
+            ["i32", "u32", "char"],
+        )
 
     def test_rejects_unsupported_string_argument(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            source = Path(directory) / "main.c"
-            source.write_text(
-                'void f(void) { TRACE(TEXT, "text=%s", "hello"); }\n',
-                encoding="utf-8",
-            )
+        with self.assertRaisesRegex(ValueError, "unsupported format"):
+            parse_format("text=%s", "test")
 
-            with self.assertRaisesRegex(ValueError, "unsupported format"):
-                collect_events([source])
+    def test_rejects_format_and_call_argument_mismatch(self) -> None:
+        format_bytes = b"value=%u\0"
+        symbols = [(0, len(format_bytes), 0, "trace_format_0_0")]
+
+        with (
+            patch("tools.extract_trace_map.read_symbols", return_value=symbols),
+            patch(
+                "tools.extract_trace_map.read_trace_section",
+                return_value=format_bytes,
+            ),
+        ):
+            with self.assertRaisesRegex(ValueError, "format expects 1 arguments"):
+                build_map(Path("firmware.elf"), "nm", "objcopy")
 
 
 class TraceDecoderTests(unittest.TestCase):
