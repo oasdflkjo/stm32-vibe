@@ -1,5 +1,6 @@
 #include "led_task.h"
 #include "fault/fault.h"
+#include "hal/watchdog.h"
 #include "trace/trace.h"
 
 #ifdef ENABLE_SWO_TRACE
@@ -24,11 +25,25 @@ int main(void)
     __asm volatile(".short 0xDE00");
 #endif
 
+    if (!watchdog_init(WATCHDOG_TIMEOUT_MS)) {
+        TRACE("WATCHDOG init failed");
+        while (1) {
+        }
+    }
+    TRACE("WATCHDOG started timeout_ms=%u", WATCHDOG_TIMEOUT_MS);
+
+#ifdef ENABLE_WATCHDOG_TEST
+    TRACE("WATCHDOG test waiting for reset");
+    while (1) {
+    }
+#endif
+
     while (1) {
         led_task_run();
 #ifdef ENABLE_SWO_TRACE
         toggle_count++;
 #endif
         TRACE("LED toggled count=%u", toggle_count);
+        watchdog_refresh();
     }
 }
