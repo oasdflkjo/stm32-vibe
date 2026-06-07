@@ -9,11 +9,21 @@ SHARED := $(REPO_ROOT)/shared
 TOOLCHAIN_PREFIX ?= arm-none-eabi-
 CC      := $(TOOLCHAIN_PREFIX)gcc
 OBJCOPY := $(TOOLCHAIN_PREFIX)objcopy
+NM      := $(TOOLCHAIN_PREFIX)nm
 SIZE    := $(TOOLCHAIN_PREFIX)size
 GDB     ?= $(TOOLCHAIN_PREFIX)gdb
 ST_FLASH := st-flash
 ST_INFO  := st-info
 OPENOCD  := openocd
+PYTHON   ?= python3
+
+SWO_CLOCK ?= 2097000
+SWO_BAUD  ?= 72000
+SWO_LOG   ?= /tmp/$(PROJECT)_swo.log
+SWO_BUILD_DIR ?= build/swo
+
+TRACE_MAP     := $(BUILD_DIR)/trace_map.json
+TRACE_EXTRACTOR := $(REPO_ROOT)/tools/extract_trace_map.py
 
 MCU_FLAGS := -mcpu=cortex-m3 -mthumb -mfloat-abi=soft
 DEFINES   := -DSTM32L152xE
@@ -34,7 +44,9 @@ APP_LOCAL_SRCS := \
 
 HAL_SRCS := \
   $(SHARED)/hal_impl/stm32l1/gpio.c \
-  $(SHARED)/hal_impl/stm32l1/systick.c
+  $(SHARED)/hal_impl/stm32l1/systick.c \
+  $(SHARED)/hal_impl/stm32l1/itm.c \
+  $(SHARED)/trace/trace.c
 
 LOCAL_OBJS := $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(APP_LOCAL_SRCS))
 HAL_OBJS   := $(patsubst $(SHARED)/%.c,$(BUILD_DIR)/shared/%.o,$(HAL_SRCS))
@@ -51,28 +63,40 @@ OBJS := \
 ELF := $(BUILD_DIR)/$(PROJECT).elf
 BIN := $(BUILD_DIR)/$(PROJECT).bin
 
-.PHONY: firmware test clean size flash probe reset erase debug-server gdb
+.PHONY: firmware test clean size flash flash-swo probe reset erase debug-server gdb swo-trace
 
-firmware: $(ELF) $(BIN) size
+firmware: $(ELF) $(BIN) $(TRACE_MAP) size
 
 # ── Unit tests (host gcc, mock HAL) ──────────────────────────────────────────
 UNITY := $(REPO_ROOT)/vendor/unity/src
 
-TEST_SRCS := \
+TEST_LED_SRCS := \
   test/test_led_task.c \
   src/led_task.c \
   $(SHARED)/hal_impl/mock/gpio.c \
   $(SHARED)/hal_impl/mock/systick.c \
   $(UNITY)/unity.c
 
-TEST_BIN := $(TEST_DIR)/test_led_task
+TEST_TRACE_SRCS := \
+  test/test_trace.c \
+  $(SHARED)/trace/trace.c \
+  $(SHARED)/hal_impl/mock/itm.c \
+  $(UNITY)/unity.c
+
+TEST_LED_BIN := $(TEST_DIR)/test_led_task
+TEST_TRACE_BIN := $(TEST_DIR)/test_trace
 
 TEST_CFLAGS := -Isrc -I$(SHARED) -I$(UNITY) -std=c11 -Wall -Wextra -Werror -g
 
-test: $(TEST_BIN)
-	./$(TEST_BIN)
+test: $(TEST_LED_BIN) $(TEST_TRACE_BIN)
+	./$(TEST_LED_BIN)
+	./$(TEST_TRACE_BIN)
+	cd $(REPO_ROOT) && $(PYTHON) -m unittest tools.test_trace_tools
 
-$(TEST_BIN): $(TEST_SRCS) | $(TEST_DIR)
+$(TEST_LED_BIN): $(TEST_LED_SRCS) | $(TEST_DIR)
+	gcc $(TEST_CFLAGS) $^ -o $@
+
+$(TEST_TRACE_BIN): $(TEST_TRACE_SRCS) | $(TEST_DIR)
 	gcc $(TEST_CFLAGS) $^ -o $@
 
 $(TEST_DIR):
@@ -104,11 +128,23 @@ $(ELF): $(OBJS) linker.ld
 $(BIN): $(ELF)
 	$(OBJCOPY) -O binary $< $@
 
+$(TRACE_MAP): $(ELF) $(TRACE_EXTRACTOR)
+	$(PYTHON) $(TRACE_EXTRACTOR) \
+	  --elf $(ELF) \
+	  --map $@ \
+	  --nm $(NM) \
+	  --objcopy $(OBJCOPY)
+
 size: $(ELF)
 	$(SIZE) $<
 
-flash: $(BIN)
+flash: $(BIN) $(TRACE_MAP)
 	$(ST_FLASH) --reset write $(BIN) 0x08004000
+
+flash-swo:
+	$(MAKE) -B flash \
+	  BUILD_DIR=$(SWO_BUILD_DIR) \
+	  DEFINES="$(DEFINES) -DENABLE_SWO_TRACE"
 
 probe:
 	$(ST_INFO) --probe
@@ -124,6 +160,13 @@ debug-server:
 
 gdb: $(ELF)
 	$(GDB) $(ELF)
+
+swo-trace:
+	$(OPENOCD) -f interface/stlink.cfg -f target/stm32l1.cfg \
+	  -c "init" \
+	  -c "stm32l1.tpiu configure -protocol uart -traceclk $(SWO_CLOCK) -pin-freq $(SWO_BAUD) -formatter 0 -output $(SWO_LOG)" \
+	  -c "stm32l1.tpiu enable" \
+	  -c "reset run"
 
 clean:
 	rm -rf $(BUILD_DIR)

@@ -7,6 +7,7 @@ RUN dnf -y install \
     git \
     make \
     openocd \
+    python3 \
     stlink \
   && dnf clean all
 
