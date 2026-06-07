@@ -28,7 +28,7 @@ TRACE_EXTRACTOR := $(REPO_ROOT)/tools/extract_trace_map.py
 IMAGE_FINALIZER := $(REPO_ROOT)/tools/finalize_image.py
 
 MCU_FLAGS := -mcpu=cortex-m3 -mthumb -mfloat-abi=soft
-DEFINES   := -DSTM32L152xE -DTRACE_SWO_BAUD=$(SWO_BAUD)U
+DEFINES   := -DSTM32L152xE -DTRACE_SWO_BAUD=$(SWO_BAUD)U -DWATCHDOG_TIMEOUT_MS=$(WATCHDOG_TIMEOUT_MS)U
 INCLUDES  := \
   -Isrc \
   -I$(SHARED) \
@@ -52,6 +52,7 @@ HAL_SRCS := \
   $(SHARED)/hal_impl/stm32l1/gpio.c \
   $(SHARED)/hal_impl/stm32l1/systick.c \
   $(SHARED)/hal_impl/stm32l1/itm.c \
+  $(SHARED)/hal_impl/stm32l1/watchdog.c \
   $(SHARED)/trace/trace.c
 
 LOCAL_OBJS := $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(APP_LOCAL_SRCS))
@@ -69,7 +70,7 @@ OBJS := \
 ELF := $(BUILD_DIR)/$(PROJECT).elf
 BIN := $(BUILD_DIR)/$(PROJECT).bin
 
-.PHONY: firmware test clean size flash flash-swo flash-fault-test probe reset erase debug-server gdb swo-trace
+.PHONY: firmware test clean size flash flash-swo flash-fault-test flash-watchdog-test probe reset erase debug-server gdb swo-trace
 
 firmware: $(ELF) $(BIN) $(TRACE_MAP) size
 
@@ -98,16 +99,23 @@ TEST_FAULT_SRCS := \
   $(SHARED)/hal_impl/mock/itm.c \
   $(UNITY)/unity.c
 
+TEST_WATCHDOG_SRCS := \
+  test/test_watchdog.c \
+  $(SHARED)/hal_impl/stm32l1/watchdog.c \
+  $(UNITY)/unity.c
+
 TEST_LED_BIN := $(TEST_DIR)/test_led_task
 TEST_TRACE_BIN := $(TEST_DIR)/test_trace
 TEST_FAULT_BIN := $(TEST_DIR)/test_fault_report
+TEST_WATCHDOG_BIN := $(TEST_DIR)/test_watchdog
 
 TEST_CFLAGS := -Isrc -I$(SHARED) -I$(UNITY) -std=c11 -Wall -Wextra -Werror -g
 
-test: $(TEST_LED_BIN) $(TEST_TRACE_BIN) $(TEST_FAULT_BIN)
+test: $(TEST_LED_BIN) $(TEST_TRACE_BIN) $(TEST_FAULT_BIN) $(TEST_WATCHDOG_BIN)
 	./$(TEST_LED_BIN)
 	./$(TEST_TRACE_BIN)
 	./$(TEST_FAULT_BIN)
+	./$(TEST_WATCHDOG_BIN)
 	cd $(REPO_ROOT) && $(PYTHON) -m unittest tools.test_trace_tools
 
 $(TEST_LED_BIN): $(TEST_LED_SRCS) | $(TEST_DIR)
@@ -118,6 +126,9 @@ $(TEST_TRACE_BIN): $(TEST_TRACE_SRCS) | $(TEST_DIR)
 
 $(TEST_FAULT_BIN): $(TEST_FAULT_SRCS) | $(TEST_DIR)
 	gcc $(TEST_CFLAGS) -DENABLE_SWO_TRACE $^ -o $@
+
+$(TEST_WATCHDOG_BIN): $(TEST_WATCHDOG_SRCS) | $(TEST_DIR)
+	gcc -Itest/mock_stm32 $(TEST_CFLAGS) $^ -o $@
 
 $(TEST_DIR):
 	mkdir -p $@
@@ -175,6 +186,11 @@ flash-fault-test:
 	$(MAKE) -B flash \
 	  BUILD_DIR=$(SWO_BUILD_DIR) \
 	  DEFINES="$(DEFINES) -DENABLE_SWO_TRACE -DENABLE_FAULT_TEST"
+
+flash-watchdog-test:
+	$(MAKE) -B flash \
+	  BUILD_DIR=$(SWO_BUILD_DIR) \
+	  DEFINES="$(DEFINES) -DENABLE_SWO_TRACE -DENABLE_WATCHDOG_TEST"
 
 probe:
 	$(ST_INFO) --probe

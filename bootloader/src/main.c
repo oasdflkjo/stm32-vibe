@@ -57,6 +57,9 @@ int main(void)
     itm_init(SystemCoreClock, TRACE_SWO_BAUD);
     fault_handlers_init();
     TRACE("BOOT reset csr=%08X", reset_cause);
+    if ((reset_cause & RCC_CSR_IWDGRSTF) != 0U) {
+        TRACE("BOOT reset cause=watchdog");
+    }
     RCC->CSR |= RCC_CSR_RMVF;
     TRACE("BOOT start");
 

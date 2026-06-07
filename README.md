@@ -281,8 +281,10 @@ FAULT mmfar=00000000 bfar=00000000 xpsr=61000000
 Fault types are `1` HardFault, `2` MemManage, `3` BusFault, and `4` UsageFault.
 The handler disables interrupts, recovers the trace serializer if a fault
 interrupted another record, reports the stacked processor state and Cortex-M
-fault registers, then halts. `MMFAR` and `BFAR` are reported as zero when the
-Cortex-M validity bits say those fault-address registers are not meaningful.
+fault registers, then stops normal execution. In a normal application build,
+the active watchdog subsequently resets the MCU. `MMFAR` and `BFAR` are
+reported as zero when the Cortex-M validity bits say those fault-address
+registers are not meaningful.
 
 Resolve the reported program counter against the exact matching ELF:
 
@@ -306,8 +308,49 @@ make flash-fault-test
 ./swo_print.sh
 ```
 
-This intentionally leaves the application halted in its fault handler. Restore
-the normal traced application afterward with `make flash-swo`.
+This test triggers the fault before starting the watchdog, intentionally
+leaving the application halted in its fault handler. Restore the normal traced
+application afterward with `make flash-swo`.
+
+## Watchdog Recovery
+
+The application starts the STM32 independent watchdog with the nominal timeout
+from `WATCHDOG_TIMEOUT_MS` in `config.mk`. The watchdog uses the internal LSI
+oscillator, whose frequency varies between devices, so the configured timeout
+is approximate rather than a precise deadline.
+
+The watchdog is refreshed only in the main loop after all scheduled work has
+completed:
+
+```c
+while (1) {
+    led_task_run();
+    watchdog_refresh();
+}
+```
+
+Do not refresh it inside an individual task or interrupt. Doing so could keep
+the system alive while the rest of the application is stalled. When more tasks
+are added, keep one central refresh point and reach it only after every required
+task has demonstrated progress.
+
+The watchdog is frozen while a debugger halts the core. In normal execution it
+recovers a blocked main loop with a hardware reset, and the bootloader reports
+that reset source:
+
+```text
+BOOT reset cause=watchdog
+```
+
+Run the deliberate watchdog hardware self-test with:
+
+```sh
+make flash-watchdog-test
+./swo_print.sh
+```
+
+The test intentionally stops refreshing the watchdog, so the board repeatedly
+resets. Restore the normal traced application afterward with `make flash-swo`.
 
 ## CI
 
