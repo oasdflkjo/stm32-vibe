@@ -134,6 +134,47 @@ make -C apps/vibe gdb           # start GDB session
 
 `make -C bootloader gdb` works the same for debugging the bootloader.
 
+## Compact SWO Tracing
+
+Build and flash the app with SWO tracing enabled:
+
+```sh
+make -C apps/vibe flash-swo
+```
+
+Read decoded trace messages in one terminal:
+
+```sh
+./swo_print.sh
+```
+
+Trace calls keep the familiar format-string shape:
+
+```c
+TRACE(LED_TOGGLED, "LED toggled count=%u", toggle_count);
+```
+
+Before firmware compilation, `tools/gen_trace.py` scans the app sources and
+generates:
+
+```text
+apps/vibe/build/swo/generated/trace_ids.h
+apps/vibe/build/swo/trace_map.json
+```
+
+The generated header contains only deterministic 16-bit event IDs and typed
+call macros. Format strings remain in the host-side JSON map and are not linked
+into the firmware.
+
+Each firmware record contains a sync marker, protocol version, event ID,
+argument count, zero to four 32-bit arguments, and a CRC-8. The host decoder
+extracts ITM stimulus-port packets, validates each record, and formats it using
+the generated map.
+
+Supported conversions are `%d`, `%i`, `%u`, `%o`, `%x`, `%X`, `%c`, and `%%`.
+Strings, floating-point values, and 64-bit arguments are rejected by the
+generator because they require a separate variable-length encoding.
+
 ## CI
 
 GitHub Actions runs on every push to `main` and on pull requests. Two steps run inside the same container job (same environment as local builds):
@@ -169,4 +210,3 @@ License files: `vendor/*/LICENSE.md`. Project code is under the top-level `LICEN
 - delay with a simple busy loop
 
 This keeps the MVP small and makes the hardware behavior visible without pulling in a larger abstraction layer.
-

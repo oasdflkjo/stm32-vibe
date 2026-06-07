@@ -3,7 +3,9 @@
 
 void systick_init(void)
 {
-    SysTick_Config(SystemCoreClock / 1000U);
+    SysTick->LOAD = (SystemCoreClock / 1000U) - 1U;
+    SysTick->VAL = 0U;
+    SysTick->CTRL = SysTick_CTRL_CLKSOURCE_Msk | SysTick_CTRL_ENABLE_Msk;
 }
 
 void systick_delay_ms(uint32_t ms)

@@ -1,2 +1,4 @@
 build/
 documents/*.pdf
+__pycache__/
+*.pyc
