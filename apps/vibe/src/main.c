@@ -1,4 +1,5 @@
 #include "led_task.h"
+#include "fault/fault.h"
 #include "trace/trace.h"
 
 #ifdef ENABLE_SWO_TRACE
@@ -11,14 +12,17 @@ int main(void)
 {
 #ifdef ENABLE_SWO_TRACE
     uint32_t toggle_count = 0U;
-#endif
 
-    led_task_init();
-
-#ifdef ENABLE_SWO_TRACE
     itm_init(SystemCoreClock, TRACE_SWO_BAUD);
 #endif
+    fault_handlers_init();
+
+    led_task_init();
     TRACE("SWO ready");
+
+#ifdef ENABLE_FAULT_TEST
+    __asm volatile(".short 0xDE00");
+#endif
 
     while (1) {
         led_task_run();

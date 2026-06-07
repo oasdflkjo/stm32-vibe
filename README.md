@@ -24,7 +24,6 @@ STM32 development monorepo for the ST NUCLEO-L152RE. Minimal toolset, container-
 │       ├── src/
 │       │   ├── main.c
 │       │   ├── led_task.c / .h
-│       │   └── syscalls.c
 │       ├── test/
 │       │   └── test_led_task.c
 │       ├── linker.ld
@@ -153,6 +152,25 @@ make -C apps/vibe gdb           # start GDB session
 
 `make -C bootloader gdb` works the same for debugging the bootloader.
 
+## Observability Direction
+
+This baseline favors lightweight runtime tracing for system-level debugging.
+Interactive debugging is still useful for isolated code, but stopping one MCU
+at a breakpoint changes timing and can disrupt communication with the other
+MCUs, radios, sensors, or host processors. In a distributed embedded system,
+that can hide or create the failure being investigated.
+
+The intended workflow is therefore:
+
+- Keep compact trace points enabled at important state and protocol boundaries.
+- Capture one continuous timeline across the bootloader and application.
+- Send fixed-width IDs and values instead of format strings.
+- Decode and format records on the development machine.
+- Use a debugger after the trace has narrowed the problem to a local code path.
+
+This adds predictable, small runtime overhead while preserving the timing and
+communication behavior that usually matters most in a multi-MCU system.
+
 ## Compact SWO Tracing
 
 The trace system provides printf-style diagnostics in both the bootloader and
@@ -224,6 +242,48 @@ dropped instead of interleaving bytes or blocking interrupts during SWO waits.
 Supported conversions are `%d`, `%i`, `%u`, `%o`, `%x`, `%X`, `%c`, and `%%`.
 Strings, floating-point values, and 64-bit arguments are rejected by the
 post-link extractor because they require a separate variable-length encoding.
+
+## Fault Diagnostics
+
+Both the bootloader and application install handlers for HardFault, MemManage,
+BusFault, and UsageFault. Divide-by-zero trapping is enabled. A fault emits:
+
+```text
+FAULT type=4 pc=0800432A lr=08004119
+FAULT cfsr=00010000 hfsr=00000000
+FAULT mmfar=00000000 bfar=00000000 xpsr=61000000
+```
+
+Fault types are `1` HardFault, `2` MemManage, `3` BusFault, and `4` UsageFault.
+The handler disables interrupts, recovers the trace serializer if a fault
+interrupted another record, reports the stacked processor state and Cortex-M
+fault registers, then halts. `MMFAR` and `BFAR` are reported as zero when the
+Cortex-M validity bits say those fault-address registers are not meaningful.
+
+Resolve the reported program counter against the exact matching ELF:
+
+```sh
+arm-none-eabi-addr2line -e apps/vibe/build/swo/vibe.elf -f -C 0x0800432A
+```
+
+Firmware ELFs include debug line information for this purpose. That information
+is not copied into the `.bin` flashed to the MCU.
+
+The bootloader also reports the raw STM32 reset-cause register:
+
+```text
+BOOT reset csr=0C000003
+```
+
+Run the deliberate UsageFault hardware self-test with:
+
+```sh
+make flash-fault-test
+./swo_print.sh
+```
+
+This intentionally leaves the application halted in its fault handler. Restore
+the normal traced application afterward with `make flash-swo`.
 
 ## CI
 

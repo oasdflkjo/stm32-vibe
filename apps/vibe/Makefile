@@ -34,8 +34,8 @@ INCLUDES  := \
   -I$(VENDOR)/cmsis-core/CMSIS/Core/Include \
   -I$(VENDOR)/cmsis_device_l1/Include
 
-CFLAGS  := $(MCU_FLAGS) $(DEFINES) $(INCLUDES) -std=c11 -Wall -Wextra -Werror -Os -ffunction-sections -fdata-sections
-ASFLAGS := $(MCU_FLAGS)
+CFLAGS  := $(MCU_FLAGS) $(DEFINES) $(INCLUDES) -std=c11 -Wall -Wextra -Werror -Os -g3 -ffunction-sections -fdata-sections
+ASFLAGS := $(MCU_FLAGS) -g3
 LDFLAGS := $(MCU_FLAGS) -Tlinker.ld -Wl,--gc-sections -Wl,-Map=$(BUILD_DIR)/$(PROJECT).map --specs=nano.specs --specs=nosys.specs
 
 APP_LOCAL_SRCS := \
@@ -43,6 +43,8 @@ APP_LOCAL_SRCS := \
   src/led_task.c
 
 HAL_SRCS := \
+  $(SHARED)/fault/fault_report.c \
+  $(SHARED)/fault/fault_stm32l1.c \
   $(SHARED)/libc/syscalls.c \
   $(SHARED)/hal_impl/stm32l1/critical.c \
   $(SHARED)/hal_impl/stm32l1/gpio.c \
@@ -65,7 +67,7 @@ OBJS := \
 ELF := $(BUILD_DIR)/$(PROJECT).elf
 BIN := $(BUILD_DIR)/$(PROJECT).bin
 
-.PHONY: firmware test clean size flash flash-swo probe reset erase debug-server gdb swo-trace
+.PHONY: firmware test clean size flash flash-swo flash-fault-test probe reset erase debug-server gdb swo-trace
 
 firmware: $(ELF) $(BIN) $(TRACE_MAP) size
 
@@ -86,14 +88,24 @@ TEST_TRACE_SRCS := \
   $(SHARED)/hal_impl/mock/itm.c \
   $(UNITY)/unity.c
 
+TEST_FAULT_SRCS := \
+  test/test_fault_report.c \
+  $(SHARED)/fault/fault_report.c \
+  $(SHARED)/trace/trace.c \
+  $(SHARED)/hal_impl/mock/critical.c \
+  $(SHARED)/hal_impl/mock/itm.c \
+  $(UNITY)/unity.c
+
 TEST_LED_BIN := $(TEST_DIR)/test_led_task
 TEST_TRACE_BIN := $(TEST_DIR)/test_trace
+TEST_FAULT_BIN := $(TEST_DIR)/test_fault_report
 
 TEST_CFLAGS := -Isrc -I$(SHARED) -I$(UNITY) -std=c11 -Wall -Wextra -Werror -g
 
-test: $(TEST_LED_BIN) $(TEST_TRACE_BIN)
+test: $(TEST_LED_BIN) $(TEST_TRACE_BIN) $(TEST_FAULT_BIN)
 	./$(TEST_LED_BIN)
 	./$(TEST_TRACE_BIN)
+	./$(TEST_FAULT_BIN)
 	cd $(REPO_ROOT) && $(PYTHON) -m unittest tools.test_trace_tools
 
 $(TEST_LED_BIN): $(TEST_LED_SRCS) | $(TEST_DIR)
@@ -101,6 +113,9 @@ $(TEST_LED_BIN): $(TEST_LED_SRCS) | $(TEST_DIR)
 
 $(TEST_TRACE_BIN): $(TEST_TRACE_SRCS) | $(TEST_DIR)
 	gcc $(TEST_CFLAGS) $^ -o $@
+
+$(TEST_FAULT_BIN): $(TEST_FAULT_SRCS) | $(TEST_DIR)
+	gcc $(TEST_CFLAGS) -DENABLE_SWO_TRACE $^ -o $@
 
 $(TEST_DIR):
 	mkdir -p $@
@@ -149,6 +164,11 @@ flash-swo:
 	$(MAKE) -B flash \
 	  BUILD_DIR=$(SWO_BUILD_DIR) \
 	  DEFINES="$(DEFINES) -DENABLE_SWO_TRACE"
+
+flash-fault-test:
+	$(MAKE) -B flash \
+	  BUILD_DIR=$(SWO_BUILD_DIR) \
+	  DEFINES="$(DEFINES) -DENABLE_SWO_TRACE -DENABLE_FAULT_TEST"
 
 probe:
 	$(ST_INFO) --probe

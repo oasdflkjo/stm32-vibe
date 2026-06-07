@@ -30,8 +30,8 @@ INCLUDES  := \
   -I$(VENDOR)/cmsis-core/CMSIS/Core/Include \
   -I$(VENDOR)/cmsis_device_l1/Include
 
-CFLAGS  := $(MCU_FLAGS) $(DEFINES) $(INCLUDES) -std=c11 -Wall -Wextra -Werror -Os -ffunction-sections -fdata-sections
-ASFLAGS := $(MCU_FLAGS)
+CFLAGS  := $(MCU_FLAGS) $(DEFINES) $(INCLUDES) -std=c11 -Wall -Wextra -Werror -Os -g3 -ffunction-sections -fdata-sections
+ASFLAGS := $(MCU_FLAGS) -g3
 LDFLAGS := $(MCU_FLAGS) -Tlinker.ld -Wl,--gc-sections -Wl,-Map=$(BUILD_DIR)/$(PROJECT).map --specs=nano.specs --specs=nosys.specs
 
 SRCS := \
@@ -39,6 +39,8 @@ SRCS := \
   src/app_validation.c
 
 SHARED_SRCS := \
+  $(SHARED)/fault/fault_report.c \
+  $(SHARED)/fault/fault_stm32l1.c \
   $(SHARED)/libc/syscalls.c \
   $(SHARED)/hal_impl/stm32l1/critical.c \
   $(SHARED)/hal_impl/stm32l1/itm.c \

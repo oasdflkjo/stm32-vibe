@@ -13,6 +13,7 @@ void trace_emit3(uint16_t event_id, uint32_t arg0, uint32_t arg1,
                  uint32_t arg2);
 void trace_emit4(uint16_t event_id, uint32_t arg0, uint32_t arg1,
                  uint32_t arg2, uint32_t arg3);
+void trace_abort_record(void);
 
 #ifdef ENABLE_SWO_TRACE
 #define TRACE_DETAIL_JOIN_INNER(a, b) a##b

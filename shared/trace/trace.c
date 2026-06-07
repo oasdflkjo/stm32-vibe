@@ -30,6 +30,11 @@ static void trace_unlock(void)
     critical_section_exit(critical_state);
 }
 
+void trace_abort_record(void)
+{
+    trace_unlock();
+}
+
 static uint8_t crc8_update(uint8_t crc, uint8_t value)
 {
     crc ^= value;
