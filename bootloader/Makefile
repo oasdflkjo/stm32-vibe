@@ -131,7 +131,7 @@ size: $(ELF)
 	$(SIZE) $<
 
 flash: $(BIN) $(TRACE_MAP)
-	$(ST_FLASH) --reset write $(BIN) 0x08000000
+	$(ST_FLASH) --reset write $(BIN) $(BOOTLOADER_FLASH_ADDR)
 
 probe:
 	$(ST_INFO) --probe

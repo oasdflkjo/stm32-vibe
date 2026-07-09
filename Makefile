@@ -2,6 +2,8 @@ CONTAINER_ENGINE ?= podman
 CONTAINER_IMAGE ?= stm32-vibe-build
 CONTAINER_VOLUME_SUFFIX ?= :Z
 
+include config.mk
+
 export CCACHE_DISABLE ?= 1
 
 APP ?= vibe
@@ -29,7 +31,7 @@ flash: $(COMBINED_HEX)
 	st-flash --reset --format ihex write $(COMBINED_HEX)
 
 flash-bootloader: bootloader/build/bootloader.bin
-	st-flash --reset write bootloader/build/bootloader.bin 0x08000000
+	st-flash --reset write bootloader/build/bootloader.bin $(BOOTLOADER_FLASH_ADDR)
 
 flash-app:
 	$(MAKE) -C $(APP_DIR) flash

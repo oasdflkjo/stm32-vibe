@@ -17,13 +17,13 @@ tracing, fault diagnostics, watchdog recovery, and host-side unit tests.
 ├── Containerfile          # Build environment (Fedora + arm-none-eabi + gcc)
 ├── config.mk              # Shared CPU, SWO, app version, and watchdog settings
 ├── Makefile               # Top-level orchestrator
-├── bootloader/            # Bootloader (0x08000000, 16KB)
+├── bootloader/            # Bootloader (0x08000000, 64KB)
 │   ├── src/
 │   ├── test/
 │   ├── linker.ld
 │   └── Makefile
 ├── apps/
-│   └── vibe/              # Main application (0x08004000, 496KB)
+│   └── vibe/              # Main application, currently linked for slot A
 │       ├── src/
 │       │   ├── main.c
 │       │   ├── led_task.c / .h
@@ -57,13 +57,17 @@ tracing, fault diagnostics, watchdog recovery, and host-side unit tests.
 
 ## Flash Layout
 
-| Region      | Start        | Size   |
-|-------------|--------------|--------|
-| Bootloader  | `0x08000000` | 16 KB  |
-| App (vibe)  | `0x08004000` | 496 KB |
+| Region         | Start        | Size   |
+|----------------|--------------|--------|
+| Bootloader     | `0x08000000` | 64 KB  |
+| Boot state     | `0x08010000` | 4 KB   |
+| App slot A     | `0x08011000` | 220 KB |
+| App slot B     | `0x08048000` | 220 KB |
+| Reserved flash | `0x0807F000` | 4 KB   |
 
 The bootloader validates the app manifest, CRC, stack pointer, and reset vector
-at `0x08004000` before jumping to it.
+in slot A at `0x08011000` before jumping to it. Slot B and boot-state storage
+are reserved for the CAN firmware update flow.
 
 ## Developer Workflow
 
@@ -149,7 +153,7 @@ Flash individually:
 
 ```sh
 make flash-bootloader     # st-flash to 0x08000000
-make flash-app            # st-flash to 0x08004000
+make flash-app            # st-flash to slot A at 0x08011000
 ```
 
 Hardware diagnostic images are also available:

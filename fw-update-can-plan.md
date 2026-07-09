@@ -10,8 +10,11 @@ flash-layout rewrite.
 
 ## Current Baseline
 
-- Bootloader at `0x08000000`, currently 16 KB.
-- One application slot at `0x08004000`, currently 496 KB.
+- Bootloader at `0x08000000`, currently reserved as 64 KB.
+- Boot-state storage reserved at `0x08010000`, currently 4 KB.
+- App slot A at `0x08011000`, currently 220 KB.
+- App slot B at `0x08048000`, currently 220 KB.
+- Reserved flash at `0x0807F000`, currently 4 KB.
 - Application image has a manifest at offset `0x200`.
 - The manifest stores magic, manifest version, manifest size, image size,
   CRC-32, software version, hardware ID, image flags, and reserved words.
@@ -37,13 +40,14 @@ reset.
 
 Use A/B application partitioning.
 
-Proposed layout direction:
+Current layout:
 
 ```text
-0x08000000  bootloader
-0x0800????  boot persistent state
-0x0800????  app slot A
-0x080?????  app slot B
+0x08000000  bootloader, 64 KB
+0x08010000  boot persistent state, 4 KB
+0x08011000  app slot A, 220 KB
+0x08048000  app slot B, 220 KB
+0x0807F000  reserved flash, 4 KB
 0x08080000  end of flash
 ```
 

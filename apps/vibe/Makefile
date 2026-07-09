@@ -175,7 +175,7 @@ size: $(ELF)
 	$(SIZE) $<
 
 flash: $(BIN) $(TRACE_MAP)
-	$(ST_FLASH) --reset write $(BIN) 0x08004000
+	$(ST_FLASH) --reset write $(BIN) $(APP_SLOT_A_FLASH_ADDR)
 
 flash-swo:
 	$(MAKE) -B flash \
