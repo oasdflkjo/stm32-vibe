@@ -38,7 +38,9 @@ added.
 │       │   ├── test_trace.c
 │       │   ├── test_fault_report.c
 │       │   ├── test_watchdog.c
-│       │   └── test_can.c
+│       │   ├── test_can.c
+│       │   ├── test_update_protocol.c
+│       │   └── test_update_stream.c
 │       ├── linker.ld
 │       └── Makefile
 ├── shared/
@@ -47,6 +49,7 @@ added.
 │   ├── image/             # Shared application image format
 │   ├── libc/              # Shared no-heap newlib syscall stubs
 │   ├── trace/             # Compact SWO trace encoder
+│   ├── update/            # Transport-neutral firmware update protocol
 │   └── hal_impl/
 │       ├── stm32l1/       # Real hardware implementations
 │       └── mock/          # Mock implementations for unit tests
@@ -144,9 +147,10 @@ apps/vibe/build/swo/vibe.elf / .bin / trace_map.json
 App logic is separated from hardware via HAL interfaces in `shared/hal/`. Tests
 compile against `shared/hal_impl/mock/` using the host `gcc`, with no
 cross-compiler or hardware needed. Current coverage includes the app LED task,
-trace framing, fault-report formatting, watchdog register programming,
-bootloader image validation, CRC checks, vector validation, and the Python trace
-tooling.
+trace framing, fault-report formatting, watchdog register programming, CAN mock
+behavior, firmware-update packet encoding/decoding, byte-stream packet
+extraction, bootloader image validation, CRC checks, vector validation, and the
+Python trace tooling.
 
 ```sh
 make test          # build and run all tests

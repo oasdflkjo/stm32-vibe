@@ -26,6 +26,24 @@ flash-layout rewrite.
 - `BOARD=nucleo-l152re` is the default board today.
 - `BOARD=nucleo-f446re` is reserved for the CAN-capable board port, but still
   needs STM32F4 vendor sources and `shared/hal_impl/stm32f4/` code.
+- A transport-neutral update packet layer exists in `shared/update/`.
+- The update stream parser can extract CRC-checked packets from arbitrary byte
+  streams, so UART bring-up can reuse the same protocol before CAN hardware
+  arrives.
+
+## Current Checkpoint
+
+The branch is ready to continue from a clean protocol foundation:
+
+- `shared/update/update_protocol.c` encodes and decodes update packets.
+- `shared/update/update_stream.c` handles UART-style byte-stream resync,
+  partial packets, bad CRC recovery, and back-to-back packets.
+- `apps/vibe/test/test_update_protocol.c` and
+  `apps/vibe/test/test_update_stream.c` cover those layers.
+- The next implementation step is a UART HAL/mock and a bootloader update
+  command loop that feeds received bytes into `update_stream_t`.
+- CAN transport should later fragment the same protocol packets into classic
+  CAN frames.
 
 ## First Architecture Decisions
 
@@ -193,9 +211,10 @@ easier to reason about.
 
 ## CAN Update Protocol
 
-Define a small framework rather than ad hoc command IDs.
+Use the transport-neutral packet format in `shared/update/` rather than ad hoc
+transport-specific command IDs.
 
-Frame requirements:
+Packet fields:
 
 - Node identity and addressing.
 - Protocol version.
@@ -204,7 +223,7 @@ Frame requirements:
 - Sequence number or block index.
 - Payload length.
 - Response/status code.
-- CRC for transferred blocks or final image.
+- CRC-32 over packet header and payload.
 
 Minimum commands:
 
@@ -231,6 +250,9 @@ Reliability rules:
 CAN payload is small, so define block/chunk behavior early. For classic CAN,
 the protocol must handle 8-byte frames. If CAN FD is not guaranteed, do not
 depend on larger frames.
+
+UART can carry the same full packet as a byte stream. The UART transport should
+use `update_stream_t` for resynchronization and CRC rejection.
 
 ## Host Update Tool
 
@@ -277,18 +299,21 @@ path:
 3. Add persistent boot state module with host unit tests.
 4. Update bootloader validation to understand slots and boot state.
 5. Add rollback and app-confirm flow without CAN.
-6. Identify CAN shield hardware and add the driver skeleton.
-7. Add protocol framing and host tests.
-8. Add bootloader CAN update mode.
-9. Add host update tool.
-10. Add app integration: status reporting, update-mode request, and boot
+6. Add UART HAL/mock and bootloader update command loop.
+7. Add mock flash writer and connect update blocks to inactive-slot writes.
+8. Add host UART update tool.
+9. Add STM32F4 vendor sources and `nucleo-f446re` HAL implementations.
+10. Add native CAN driver and CAN transport for the existing update protocol.
+11. Add bootloader CAN update mode.
+12. Add app integration: status reporting, update-mode request, and boot
     confirmation.
-11. Add signature validation when the CRC-based path is working.
+13. Add signature validation when the CRC-based path is working.
 
 ## Open Questions
 
-- What exact CAN shield/controller is attached to the NUCLEO-L152RE?
-- Will we use classic CAN only, or can we rely on CAN FD?
+- What UART instance/pins should be used for the development update transport
+  on the current NUCLEO-L152RE?
+- Will final field updates use classic CAN only, or can we rely on CAN FD?
 - What node ID source should be used: compile-time config, flash state, DIP
   switches, or CAN command provisioning?
 - What maximum application size do we need to reserve per slot?

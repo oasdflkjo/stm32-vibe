@@ -104,20 +104,35 @@ TEST_CAN_SRCS := \
   $(SHARED)/hal_impl/mock/can.c \
   $(UNITY)/unity.c
 
+TEST_UPDATE_PROTOCOL_SRCS := \
+  test/test_update_protocol.c \
+  $(SHARED)/update/update_protocol.c \
+  $(UNITY)/unity.c
+
+TEST_UPDATE_STREAM_SRCS := \
+  test/test_update_stream.c \
+  $(SHARED)/update/update_protocol.c \
+  $(SHARED)/update/update_stream.c \
+  $(UNITY)/unity.c
+
 TEST_LED_BIN := $(TEST_DIR)/test_led_task
 TEST_TRACE_BIN := $(TEST_DIR)/test_trace
 TEST_FAULT_BIN := $(TEST_DIR)/test_fault_report
 TEST_WATCHDOG_BIN := $(TEST_DIR)/test_watchdog
 TEST_CAN_BIN := $(TEST_DIR)/test_can
+TEST_UPDATE_PROTOCOL_BIN := $(TEST_DIR)/test_update_protocol
+TEST_UPDATE_STREAM_BIN := $(TEST_DIR)/test_update_stream
 
 TEST_CFLAGS := -Isrc -I$(SHARED) -I$(UNITY) -std=c11 -Wall -Wextra -Werror -g
 
-test: $(TEST_LED_BIN) $(TEST_TRACE_BIN) $(TEST_FAULT_BIN) $(TEST_WATCHDOG_BIN) $(TEST_CAN_BIN)
+test: $(TEST_LED_BIN) $(TEST_TRACE_BIN) $(TEST_FAULT_BIN) $(TEST_WATCHDOG_BIN) $(TEST_CAN_BIN) $(TEST_UPDATE_PROTOCOL_BIN) $(TEST_UPDATE_STREAM_BIN)
 	./$(TEST_LED_BIN)
 	./$(TEST_TRACE_BIN)
 	./$(TEST_FAULT_BIN)
 	./$(TEST_WATCHDOG_BIN)
 	./$(TEST_CAN_BIN)
+	./$(TEST_UPDATE_PROTOCOL_BIN)
+	./$(TEST_UPDATE_STREAM_BIN)
 	cd $(REPO_ROOT) && $(PYTHON) -m unittest tools.test_trace_tools
 
 $(TEST_LED_BIN): $(TEST_LED_SRCS) | $(TEST_DIR)
@@ -133,6 +148,12 @@ $(TEST_WATCHDOG_BIN): $(TEST_WATCHDOG_SRCS) | $(TEST_DIR)
 	gcc -Itest/mock_stm32 $(TEST_CFLAGS) $^ -o $@
 
 $(TEST_CAN_BIN): $(TEST_CAN_SRCS) | $(TEST_DIR)
+	gcc $(TEST_CFLAGS) $^ -o $@
+
+$(TEST_UPDATE_PROTOCOL_BIN): $(TEST_UPDATE_PROTOCOL_SRCS) | $(TEST_DIR)
+	gcc $(TEST_CFLAGS) $^ -o $@
+
+$(TEST_UPDATE_STREAM_BIN): $(TEST_UPDATE_STREAM_SRCS) | $(TEST_DIR)
 	gcc $(TEST_CFLAGS) $^ -o $@
 
 $(TEST_DIR):
