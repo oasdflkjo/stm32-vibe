@@ -1,6 +1,8 @@
 # stm32-vibe
 
-STM32 development monorepo for the ST NUCLEO-L152RE. Minimal toolset, container-based builds, LLM-assisted development.
+STM32 development monorepo for the ST NUCLEO-L152RE. Minimal toolset,
+container-based builds, bootloader-managed application images, compact SWO
+tracing, fault diagnostics, watchdog recovery, and host-side unit tests.
 
 ## Hardware
 
@@ -13,10 +15,11 @@ STM32 development monorepo for the ST NUCLEO-L152RE. Minimal toolset, container-
 ```text
 .
 ├── Containerfile          # Build environment (Fedora + arm-none-eabi + gcc)
-├── config.mk              # Shared CPU and SWO clock configuration
+├── config.mk              # Shared CPU, SWO, app version, and watchdog settings
 ├── Makefile               # Top-level orchestrator
 ├── bootloader/            # Bootloader (0x08000000, 16KB)
 │   ├── src/
+│   ├── test/
 │   ├── linker.ld
 │   └── Makefile
 ├── apps/
@@ -25,17 +28,22 @@ STM32 development monorepo for the ST NUCLEO-L152RE. Minimal toolset, container-
 │       │   ├── main.c
 │       │   ├── led_task.c / .h
 │       ├── test/
-│       │   └── test_led_task.c
+│       │   ├── test_led_task.c
+│       │   ├── test_trace.c
+│       │   ├── test_fault_report.c
+│       │   └── test_watchdog.c
 │       ├── linker.ld
 │       └── Makefile
 ├── shared/
-│   ├── hal/               # HAL interfaces (gpio.h, systick.h, itm.h)
+│   ├── fault/             # Shared Cortex-M fault reporting
+│   ├── hal/               # HAL interfaces (gpio, systick, itm, watchdog)
 │   ├── image/             # Shared application image format
 │   ├── libc/              # Shared no-heap newlib syscall stubs
+│   ├── trace/             # Compact SWO trace encoder
 │   └── hal_impl/
 │       ├── stm32l1/       # Real hardware implementations
 │       └── mock/          # Mock implementations for unit tests
-├── tools/                 # Trace map extraction and host-side decoding
+├── tools/                 # Image finalization, trace maps, and host decoding
 ├── vendor/
 │   ├── cmsis-core/
 │   ├── cmsis_device_l1/
@@ -59,7 +67,9 @@ at `0x08004000` before jumping to it.
 
 ## Developer Workflow
 
-The only required host tool is `podman` (or `docker`). No ARM toolchain installation needed.
+Firmware builds run in a container, so the host does not need an ARM toolchain.
+Use `podman` or `docker` for firmware builds; unit tests additionally use host
+`gcc` and `python3`.
 
 Clone with submodules:
 
@@ -105,7 +115,7 @@ Build outputs:
 ```text
 build/combined.hex              ← bootloader + app merged, ready to flash
 bootloader/build/bootloader.elf / .bin / trace_map.json
-apps/vibe/build/vibe.elf / .bin
+apps/vibe/build/vibe.elf / .bin / trace_map.json
 apps/vibe/build/swo/vibe.elf / .bin / trace_map.json
 ```
 
@@ -113,14 +123,19 @@ apps/vibe/build/swo/vibe.elf / .bin / trace_map.json
 
 App logic is separated from hardware via HAL interfaces in `shared/hal/`. Tests
 compile against `shared/hal_impl/mock/` using the host `gcc`, with no
-cross-compiler or hardware needed. Bootloader image, CRC, and vector validation
-are also tested as hardware-independent modules.
+cross-compiler or hardware needed. Current coverage includes the app LED task,
+trace framing, fault-report formatting, watchdog register programming,
+bootloader image validation, CRC checks, vector validation, and the Python trace
+tooling.
 
 ```sh
 make test          # build and run all tests
 ```
 
-Adding a test: create `apps/<name>/test/test_<module>.c`, link it against mock HAL + Unity in the app's `Makefile`. See `apps/vibe/test/test_led_task.c` as an example.
+Adding a test: create `apps/<name>/test/test_<module>.c`, link it against mock
+HAL + Unity in the app's `Makefile`. See `apps/vibe/test/test_led_task.c`,
+`apps/vibe/test/test_trace.c`, and `apps/vibe/test/test_fault_report.c` for
+examples of task, trace, and diagnostic tests.
 
 ## Flashing
 
@@ -135,6 +150,14 @@ Flash individually:
 ```sh
 make flash-bootloader     # st-flash to 0x08000000
 make flash-app            # st-flash to 0x08004000
+```
+
+Hardware diagnostic images are also available:
+
+```sh
+make flash-swo            # traced normal app
+make flash-fault-test     # traced app that triggers a UsageFault
+make flash-watchdog-test  # traced app that waits for watchdog reset
 ```
 
 The bootloader validates the complete application image and its vectors before
