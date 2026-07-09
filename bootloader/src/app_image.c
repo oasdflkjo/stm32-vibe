@@ -49,11 +49,19 @@ app_image_result_t app_image_validate(const uint8_t *image,
 
     manifest = (const app_manifest_t *)(image + APP_MANIFEST_OFFSET);
     result.status = APP_IMAGE_BAD_MAGIC;
-    result.version = manifest->version;
+    result.version = manifest->software_version;
     result.image_size = manifest->image_size;
     result.expected_crc32 = manifest->image_crc32;
+    result.hardware_id = manifest->hardware_id;
+    result.image_flags = manifest->image_flags;
 
     if (manifest->magic != APP_MANIFEST_MAGIC) {
+        return result;
+    }
+
+    if ((manifest->manifest_version != APP_MANIFEST_VERSION) ||
+        (manifest->manifest_size != APP_MANIFEST_SIZE)) {
+        result.status = APP_IMAGE_BAD_MANIFEST;
         return result;
     }
 

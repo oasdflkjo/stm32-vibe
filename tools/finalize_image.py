@@ -9,10 +9,13 @@ import zlib
 from pathlib import Path
 
 
-MANIFEST_FORMAT = "<IIII"
+MANIFEST_RESERVED_WORDS = 8
+MANIFEST_FORMAT = "<IIIIIIII" + ("I" * MANIFEST_RESERVED_WORDS)
 MANIFEST_SIZE = struct.calcsize(MANIFEST_FORMAT)
 MANIFEST_MAGIC = 0x45424956
+MANIFEST_VERSION = 2
 MANIFEST_OFFSET = 0x200
+MANIFEST_CRC32_OFFSET = 16
 
 
 def finalize_bytes(image: bytes, version: int) -> tuple[bytes, bytes]:
@@ -25,9 +28,14 @@ def finalize_bytes(image: bytes, version: int) -> tuple[bytes, bytes]:
     manifest = struct.pack(
         MANIFEST_FORMAT,
         MANIFEST_MAGIC,
+        MANIFEST_VERSION,
+        MANIFEST_SIZE,
         len(patched),
         0,
         version,
+        0,
+        0,
+        *([0] * MANIFEST_RESERVED_WORDS),
     )
     patched[MANIFEST_OFFSET:MANIFEST_OFFSET + MANIFEST_SIZE] = manifest
 
@@ -35,9 +43,14 @@ def finalize_bytes(image: bytes, version: int) -> tuple[bytes, bytes]:
     manifest = struct.pack(
         MANIFEST_FORMAT,
         MANIFEST_MAGIC,
+        MANIFEST_VERSION,
+        MANIFEST_SIZE,
         len(patched),
         image_crc32,
         version,
+        0,
+        0,
+        *([0] * MANIFEST_RESERVED_WORDS),
     )
     patched[MANIFEST_OFFSET:MANIFEST_OFFSET + MANIFEST_SIZE] = manifest
     return bytes(patched), manifest

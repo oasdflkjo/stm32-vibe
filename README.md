@@ -168,9 +168,10 @@ diagnosis.
 
 ## Application Image Manifest
 
-Every application contains a 16-byte manifest at offset `0x200` from its flash
-base. It records a magic value, the exact image size, a CRC-32, and the
-application version from `APP_VERSION` in `config.mk`.
+Every application contains a 64-byte manifest at offset `0x200` from its flash
+base. It records a magic value, manifest format version, manifest size, exact
+image size, CRC-32, software version from `APP_VERSION` in `config.mk`,
+hardware compatibility ID, image flags, and reserved words for future metadata.
 
 After linking, `tools/finalize_image.py` creates the raw binary, calculates its
 CRC with the manifest CRC field treated as zero, and patches the same manifest

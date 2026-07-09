@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include "app_image.h"
 #include "app_validation.h"
+#include "boot/boot_state.h"
 #include "fault/fault.h"
 #include "hal/itm.h"
 #include "trace/trace.h"
@@ -53,6 +54,7 @@ int main(void)
     uint32_t reset_handler = app_vectors[1];
     uint32_t reset_cause = RCC->CSR;
     app_image_result_t image_result;
+    boot_state_record_t boot_state;
 
     itm_init(SystemCoreClock, TRACE_SWO_BAUD);
     fault_handlers_init();
@@ -62,6 +64,14 @@ int main(void)
     }
     RCC->CSR |= RCC_CSR_RMVF;
     TRACE("BOOT start");
+
+    boot_state_init_default(&boot_state);
+    TRACE("BOOT state active=%u pending=%u gen=%u",
+          boot_state.active_slot, boot_state.pending_slot,
+          boot_state.generation);
+    TRACE("BOOT state attempts=%u slot_a=%u slot_b=%u",
+          boot_state.pending_attempts, boot_state.slot_a_status,
+          boot_state.slot_b_status);
 
     image_result = app_image_validate(
         (const uint8_t *)APP_IMAGE_START_ADDR,

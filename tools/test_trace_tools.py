@@ -9,9 +9,13 @@ from unittest.mock import patch
 from tools.decode_trace import FrameDecoder, ItmDecoder, crc8, format_record, load_events
 from tools.extract_trace_map import build_map, parse_format
 from tools.finalize_image import (
+    MANIFEST_CRC32_OFFSET,
     MANIFEST_FORMAT,
     MANIFEST_MAGIC,
     MANIFEST_OFFSET,
+    MANIFEST_RESERVED_WORDS,
+    MANIFEST_SIZE,
+    MANIFEST_VERSION,
     finalize_bytes,
 )
 
@@ -104,16 +108,31 @@ class ImageFinalizerTests(unittest.TestCase):
         image = bytes(MANIFEST_OFFSET + struct.calcsize(MANIFEST_FORMAT) + 32)
 
         patched, manifest_bytes = finalize_bytes(image, version=7)
-        magic, image_size, image_crc32, version = struct.unpack(
+        (
+            magic,
+            manifest_version,
+            manifest_size,
+            image_size,
+            image_crc32,
+            software_version,
+            hardware_id,
+            image_flags,
+            *reserved,
+        ) = struct.unpack(
             MANIFEST_FORMAT,
             manifest_bytes,
         )
         crc_image = bytearray(patched)
-        struct.pack_into("<I", crc_image, MANIFEST_OFFSET + 8, 0)
+        struct.pack_into("<I", crc_image, MANIFEST_OFFSET + MANIFEST_CRC32_OFFSET, 0)
 
         self.assertEqual(magic, MANIFEST_MAGIC)
+        self.assertEqual(manifest_version, MANIFEST_VERSION)
+        self.assertEqual(manifest_size, MANIFEST_SIZE)
         self.assertEqual(image_size, len(image))
-        self.assertEqual(version, 7)
+        self.assertEqual(software_version, 7)
+        self.assertEqual(hardware_id, 0)
+        self.assertEqual(image_flags, 0)
+        self.assertEqual(reserved, [0] * MANIFEST_RESERVED_WORDS)
         self.assertEqual(image_crc32, zlib.crc32(crc_image) & 0xFFFFFFFF)
 
 

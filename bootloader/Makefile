@@ -40,6 +40,7 @@ SRCS := \
   src/app_validation.c
 
 SHARED_SRCS := \
+  $(SHARED)/boot/boot_state.c \
   $(SHARED)/fault/fault_report.c \
   $(SHARED)/fault/fault_stm32l1.c \
   $(SHARED)/libc/syscalls.c \
@@ -66,18 +67,27 @@ TRACE_EXTRACTOR := $(REPO_ROOT)/tools/extract_trace_map.py
 firmware: $(ELF) $(BIN) $(TRACE_MAP) size
 
 UNITY := $(REPO_ROOT)/vendor/unity/src
-TEST_BIN := $(TEST_DIR)/test_app_validation
-TEST_SRCS := \
+TEST_APP_VALIDATION_BIN := $(TEST_DIR)/test_app_validation
+TEST_APP_VALIDATION_SRCS := \
   test/test_app_validation.c \
   src/app_image.c \
   src/app_validation.c \
   $(UNITY)/unity.c
+TEST_BOOT_STATE_BIN := $(TEST_DIR)/test_boot_state
+TEST_BOOT_STATE_SRCS := \
+  test/test_boot_state.c \
+  $(SHARED)/boot/boot_state.c \
+  $(UNITY)/unity.c
 TEST_CFLAGS := -Isrc -I$(SHARED) -I$(UNITY) -std=c11 -Wall -Wextra -Werror -g
 
-test: $(TEST_BIN)
-	./$(TEST_BIN)
+test: $(TEST_APP_VALIDATION_BIN) $(TEST_BOOT_STATE_BIN)
+	./$(TEST_APP_VALIDATION_BIN)
+	./$(TEST_BOOT_STATE_BIN)
 
-$(TEST_BIN): $(TEST_SRCS) | $(TEST_DIR)
+$(TEST_APP_VALIDATION_BIN): $(TEST_APP_VALIDATION_SRCS) | $(TEST_DIR)
+	gcc $(TEST_CFLAGS) $^ -o $@
+
+$(TEST_BOOT_STATE_BIN): $(TEST_BOOT_STATE_SRCS) | $(TEST_DIR)
 	gcc $(TEST_CFLAGS) $^ -o $@
 
 $(TEST_DIR):

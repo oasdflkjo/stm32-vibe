@@ -7,6 +7,7 @@ typedef enum {
     APP_IMAGE_BAD_MAGIC = 1,
     APP_IMAGE_BAD_SIZE = 2,
     APP_IMAGE_BAD_CRC = 3,
+    APP_IMAGE_BAD_MANIFEST = 4,
 } app_image_status_t;
 
 typedef struct {
@@ -15,6 +16,8 @@ typedef struct {
     uint32_t image_size;
     uint32_t expected_crc32;
     uint32_t calculated_crc32;
+    uint32_t hardware_id;
+    uint32_t image_flags;
 } app_image_result_t;
 
 app_image_result_t app_image_validate(const uint8_t *image,

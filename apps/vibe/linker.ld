@@ -29,7 +29,7 @@ SECTIONS
     KEEP(*(.app_manifest))
   } > FLASH :text
 
-  ASSERT(SIZEOF(.app_manifest) == 16, "Application manifest has invalid size")
+  ASSERT(SIZEOF(.app_manifest) == 64, "Application manifest has invalid size")
 
   .text :
   {
