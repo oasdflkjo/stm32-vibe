@@ -23,6 +23,9 @@ flash-layout rewrite.
 - Bootloader validates manifest, CRC, stack pointer, and reset vector before
   jumping.
 - Bootloader and app already have compact SWO trace and fault reporting.
+- `BOARD=nucleo-l152re` is the default board today.
+- `BOARD=nucleo-f446re` is reserved for the CAN-capable board port, but still
+  needs STM32F4 vendor sources and `shared/hal_impl/stm32f4/` code.
 
 ## First Architecture Decisions
 
@@ -129,13 +132,12 @@ Tooling:
 
 ## CAN Shield Driver
 
-First task: identify the exact CAN shield hardware.
+The selected CAN hardware is the Waveshare RS485 CAN Shield. It provides the
+CAN transceiver and expects the MCU to provide the CAN controller. The
+NUCLEO-F446RE is the target board for this path.
 
-Driver work depends on whether the shield is:
-
-- Native STM32 CAN transceiver wiring to the MCU CAN peripheral.
-- SPI CAN controller such as MCP2515 plus transceiver.
-- Some other CAN controller interface.
+Driver work is therefore the native STM32F4 CAN peripheral path, not an MCP2515
+SPI controller path.
 
 Driver layers:
 

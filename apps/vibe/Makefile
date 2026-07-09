@@ -27,13 +27,11 @@ TRACE_MAP     := $(BUILD_DIR)/trace_map.json
 TRACE_EXTRACTOR := $(REPO_ROOT)/tools/extract_trace_map.py
 IMAGE_FINALIZER := $(REPO_ROOT)/tools/finalize_image.py
 
-MCU_FLAGS := -mcpu=cortex-m3 -mthumb -mfloat-abi=soft
-DEFINES   := -DSTM32L152xE -DTRACE_SWO_BAUD=$(SWO_BAUD)U -DWATCHDOG_TIMEOUT_MS=$(WATCHDOG_TIMEOUT_MS)U
+DEFINES   := $(BOARD_DEFINES) -DTRACE_SWO_BAUD=$(SWO_BAUD)U -DWATCHDOG_TIMEOUT_MS=$(WATCHDOG_TIMEOUT_MS)U
 INCLUDES  := \
   -Isrc \
   -I$(SHARED) \
-  -I$(VENDOR)/cmsis-core/CMSIS/Core/Include \
-  -I$(VENDOR)/cmsis_device_l1/Include
+  $(BOARD_INCLUDES)
 
 CFLAGS  := $(MCU_FLAGS) $(DEFINES) $(INCLUDES) -std=c11 -Wall -Wextra -Werror -Os -g3 -ffunction-sections -fdata-sections
 ASFLAGS := $(MCU_FLAGS) -g3
@@ -46,26 +44,23 @@ APP_LOCAL_SRCS := \
 
 HAL_SRCS := \
   $(SHARED)/fault/fault_report.c \
-  $(SHARED)/fault/fault_stm32l1.c \
+  $(FAULT_IMPL_SRC) \
   $(SHARED)/libc/syscalls.c \
-  $(SHARED)/hal_impl/stm32l1/critical.c \
-  $(SHARED)/hal_impl/stm32l1/gpio.c \
-  $(SHARED)/hal_impl/stm32l1/systick.c \
-  $(SHARED)/hal_impl/stm32l1/itm.c \
-  $(SHARED)/hal_impl/stm32l1/watchdog.c \
+  $(HAL_IMPL_DIR)/critical.c \
+  $(HAL_IMPL_DIR)/gpio.c \
+  $(HAL_IMPL_DIR)/systick.c \
+  $(HAL_IMPL_DIR)/itm.c \
+  $(HAL_IMPL_DIR)/watchdog.c \
   $(SHARED)/trace/trace.c
 
 LOCAL_OBJS := $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(APP_LOCAL_SRCS))
 HAL_OBJS   := $(patsubst $(SHARED)/%.c,$(BUILD_DIR)/shared/%.o,$(HAL_SRCS))
 
-DEVICE_SYSTEM  := $(VENDOR)/cmsis_device_l1/Source/Templates/system_stm32l1xx.c
-DEVICE_STARTUP := $(VENDOR)/cmsis_device_l1/Source/Templates/gcc/startup_stm32l152xe.s
-
 OBJS := \
   $(LOCAL_OBJS) \
   $(HAL_OBJS) \
-  $(BUILD_DIR)/system_stm32l1xx.o \
-  $(BUILD_DIR)/startup_stm32l152xe.o
+  $(BUILD_DIR)/$(DEVICE_SYSTEM_OBJ) \
+  $(BUILD_DIR)/$(DEVICE_STARTUP_OBJ)
 
 ELF := $(BUILD_DIR)/$(PROJECT).elf
 BIN := $(BUILD_DIR)/$(PROJECT).bin
@@ -104,18 +99,25 @@ TEST_WATCHDOG_SRCS := \
   $(SHARED)/hal_impl/stm32l1/watchdog.c \
   $(UNITY)/unity.c
 
+TEST_CAN_SRCS := \
+  test/test_can.c \
+  $(SHARED)/hal_impl/mock/can.c \
+  $(UNITY)/unity.c
+
 TEST_LED_BIN := $(TEST_DIR)/test_led_task
 TEST_TRACE_BIN := $(TEST_DIR)/test_trace
 TEST_FAULT_BIN := $(TEST_DIR)/test_fault_report
 TEST_WATCHDOG_BIN := $(TEST_DIR)/test_watchdog
+TEST_CAN_BIN := $(TEST_DIR)/test_can
 
 TEST_CFLAGS := -Isrc -I$(SHARED) -I$(UNITY) -std=c11 -Wall -Wextra -Werror -g
 
-test: $(TEST_LED_BIN) $(TEST_TRACE_BIN) $(TEST_FAULT_BIN) $(TEST_WATCHDOG_BIN)
+test: $(TEST_LED_BIN) $(TEST_TRACE_BIN) $(TEST_FAULT_BIN) $(TEST_WATCHDOG_BIN) $(TEST_CAN_BIN)
 	./$(TEST_LED_BIN)
 	./$(TEST_TRACE_BIN)
 	./$(TEST_FAULT_BIN)
 	./$(TEST_WATCHDOG_BIN)
+	./$(TEST_CAN_BIN)
 	cd $(REPO_ROOT) && $(PYTHON) -m unittest tools.test_trace_tools
 
 $(TEST_LED_BIN): $(TEST_LED_SRCS) | $(TEST_DIR)
@@ -129,6 +131,9 @@ $(TEST_FAULT_BIN): $(TEST_FAULT_SRCS) | $(TEST_DIR)
 
 $(TEST_WATCHDOG_BIN): $(TEST_WATCHDOG_SRCS) | $(TEST_DIR)
 	gcc -Itest/mock_stm32 $(TEST_CFLAGS) $^ -o $@
+
+$(TEST_CAN_BIN): $(TEST_CAN_SRCS) | $(TEST_DIR)
+	gcc $(TEST_CFLAGS) $^ -o $@
 
 $(TEST_DIR):
 	mkdir -p $@
@@ -147,10 +152,10 @@ $(BUILD_DIR)/shared/%.o: $(SHARED)/%.c | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/system_stm32l1xx.o: $(DEVICE_SYSTEM) | $(BUILD_DIR)
+$(BUILD_DIR)/$(DEVICE_SYSTEM_OBJ): $(DEVICE_SYSTEM) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/startup_stm32l152xe.o: $(DEVICE_STARTUP) | $(BUILD_DIR)
+$(BUILD_DIR)/$(DEVICE_STARTUP_OBJ): $(DEVICE_STARTUP) | $(BUILD_DIR)
 	$(CC) $(ASFLAGS) -c $< -o $@
 
 $(ELF): $(OBJS) linker.ld
@@ -202,17 +207,17 @@ erase:
 	$(ST_FLASH) erase
 
 debug-server:
-	$(OPENOCD) -f interface/stlink.cfg -f target/stm32l1.cfg
+	$(OPENOCD) -f interface/stlink.cfg -f target/$(OPENOCD_TARGET).cfg
 
 gdb: $(ELF)
 	$(GDB) $(ELF)
 
 swo-trace:
-	$(OPENOCD) -f interface/stlink.cfg -f target/stm32l1.cfg \
+	$(OPENOCD) -f interface/stlink.cfg -f target/$(OPENOCD_TARGET).cfg \
 	  -c "init" \
 	  -c "reset halt" \
-	  -c "stm32l1.tpiu configure -protocol uart -traceclk $(SWO_CLOCK) -pin-freq $(SWO_BAUD) -formatter 0 -output $(SWO_LOG)" \
-	  -c "stm32l1.tpiu enable" \
+	  -c "$(OPENOCD_TPIU) configure -protocol uart -traceclk $(SWO_CLOCK) -pin-freq $(SWO_BAUD) -formatter 0 -output $(SWO_LOG)" \
+	  -c "$(OPENOCD_TPIU) enable" \
 	  -c "resume"
 
 clean:

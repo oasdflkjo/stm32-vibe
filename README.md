@@ -6,16 +6,22 @@ tracing, fault diagnostics, watchdog recovery, and host-side unit tests.
 
 ## Hardware
 
-- Board: ST NUCLEO-L152RE
-- MCU: STM32L152RE
-- User LED: LD2, green (PA5 / Arduino D13)
+- Default board: ST NUCLEO-L152RE (`BOARD=nucleo-l152re`)
+- Default MCU: STM32L152RE
+- Planned CAN board: ST NUCLEO-F446RE (`BOARD=nucleo-f446re`)
+- User LED: LD2, green (PA5 / Arduino D13 on the current app)
+
+`nucleo-f446re` is present as board metadata for the CAN shield port, but it
+does not build until STM32F4 vendor sources and hardware implementations are
+added.
 
 ## Project Layout
 
 ```text
 .
 ├── Containerfile          # Build environment (Fedora + arm-none-eabi + gcc)
-├── config.mk              # Shared CPU, SWO, app version, and watchdog settings
+├── config.mk              # Board selection and shared project settings
+├── boards/                # Board-specific build configuration
 ├── Makefile               # Top-level orchestrator
 ├── bootloader/            # Bootloader (0x08000000, 64KB)
 │   ├── src/
@@ -31,12 +37,13 @@ tracing, fault diagnostics, watchdog recovery, and host-side unit tests.
 │       │   ├── test_led_task.c
 │       │   ├── test_trace.c
 │       │   ├── test_fault_report.c
-│       │   └── test_watchdog.c
+│       │   ├── test_watchdog.c
+│       │   └── test_can.c
 │       ├── linker.ld
 │       └── Makefile
 ├── shared/
 │   ├── fault/             # Shared Cortex-M fault reporting
-│   ├── hal/               # HAL interfaces (gpio, systick, itm, watchdog)
+│   ├── hal/               # HAL interfaces (gpio, systick, itm, watchdog, can)
 │   ├── image/             # Shared application image format
 │   ├── libc/              # Shared no-heap newlib syscall stubs
 │   ├── trace/             # Compact SWO trace encoder
@@ -95,6 +102,15 @@ make
 make APP=my_app
 make test APP=my_app
 ```
+
+The default board is `nucleo-l152re`. Board selection is wired through
+`BOARD=<name>`:
+
+```sh
+make BOARD=nucleo-l152re
+```
+
+`BOARD=nucleo-f446re` is reserved for the CAN-capable NUCLEO-F446RE port.
 
 Run unit tests (host `gcc`, no cross-compilation needed):
 

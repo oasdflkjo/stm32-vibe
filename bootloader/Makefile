@@ -19,16 +19,14 @@ ST_INFO  := st-info
 OPENOCD  := openocd
 PYTHON   ?= python3
 
-MCU_FLAGS := -mcpu=cortex-m3 -mthumb -mfloat-abi=soft
 DEFINES   := \
-  -DSTM32L152xE \
+  $(BOARD_DEFINES) \
   -DENABLE_SWO_TRACE \
   -DTRACE_ID_BASE=0x8000U \
   -DTRACE_SWO_BAUD=$(SWO_BAUD)U
 INCLUDES  := \
   -I$(SHARED) \
-  -I$(VENDOR)/cmsis-core/CMSIS/Core/Include \
-  -I$(VENDOR)/cmsis_device_l1/Include
+  $(BOARD_INCLUDES)
 
 CFLAGS  := $(MCU_FLAGS) $(DEFINES) $(INCLUDES) -std=c11 -Wall -Wextra -Werror -Os -g3 -ffunction-sections -fdata-sections
 ASFLAGS := $(MCU_FLAGS) -g3
@@ -42,20 +40,17 @@ SRCS := \
 SHARED_SRCS := \
   $(SHARED)/boot/boot_state.c \
   $(SHARED)/fault/fault_report.c \
-  $(SHARED)/fault/fault_stm32l1.c \
+  $(FAULT_IMPL_SRC) \
   $(SHARED)/libc/syscalls.c \
-  $(SHARED)/hal_impl/stm32l1/critical.c \
-  $(SHARED)/hal_impl/stm32l1/itm.c \
+  $(HAL_IMPL_DIR)/critical.c \
+  $(HAL_IMPL_DIR)/itm.c \
   $(SHARED)/trace/trace.c
-
-DEVICE_SYSTEM  := $(VENDOR)/cmsis_device_l1/Source/Templates/system_stm32l1xx.c
-DEVICE_STARTUP := $(VENDOR)/cmsis_device_l1/Source/Templates/gcc/startup_stm32l152xe.s
 
 OBJS := \
   $(patsubst src/%,$(BUILD_DIR)/%,$(SRCS:.c=.o)) \
   $(patsubst $(SHARED)/%.c,$(BUILD_DIR)/shared/%.o,$(SHARED_SRCS)) \
-  $(BUILD_DIR)/system_stm32l1xx.o \
-  $(BUILD_DIR)/startup_stm32l152xe.o
+  $(BUILD_DIR)/$(DEVICE_SYSTEM_OBJ) \
+  $(BUILD_DIR)/$(DEVICE_STARTUP_OBJ)
 
 ELF := $(BUILD_DIR)/$(PROJECT).elf
 BIN := $(BUILD_DIR)/$(PROJECT).bin
@@ -106,10 +101,10 @@ $(BUILD_DIR)/shared/%.o: $(SHARED)/%.c | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/system_stm32l1xx.o: $(DEVICE_SYSTEM) | $(BUILD_DIR)
+$(BUILD_DIR)/$(DEVICE_SYSTEM_OBJ): $(DEVICE_SYSTEM) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/startup_stm32l152xe.o: $(DEVICE_STARTUP) | $(BUILD_DIR)
+$(BUILD_DIR)/$(DEVICE_STARTUP_OBJ): $(DEVICE_STARTUP) | $(BUILD_DIR)
 	$(CC) $(ASFLAGS) -c $< -o $@
 
 $(ELF): $(OBJS) linker.ld
@@ -143,7 +138,7 @@ erase:
 	$(ST_FLASH) erase
 
 debug-server:
-	$(OPENOCD) -f interface/stlink.cfg -f target/stm32l1.cfg
+	$(OPENOCD) -f interface/stlink.cfg -f target/$(OPENOCD_TARGET).cfg
 
 gdb: $(ELF)
 	$(GDB) $(ELF)
