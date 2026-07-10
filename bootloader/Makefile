@@ -38,11 +38,11 @@ SRCS := \
   src/app_validation.c \
   src/boot_flash_stm32l1.c \
   src/boot_policy.c \
-  src/boot_state_store_stm32l1.c \
   src/update_command.c
 
 SHARED_SRCS := \
   $(SHARED)/boot/boot_state.c \
+  $(HAL_IMPL_DIR)/boot_state_store.c \
   $(SHARED)/fault/fault_report.c \
   $(FAULT_IMPL_SRC) \
   $(SHARED)/libc/syscalls.c \

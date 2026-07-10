@@ -57,3 +57,4 @@ int boot_state_select_latest(const boot_state_record_t *first,
                              boot_state_record_t *selected);
 uint32_t boot_state_status_for_slot(const boot_state_record_t *state,
                                     uint32_t slot);
+int boot_state_confirm_pending(boot_state_record_t *state);

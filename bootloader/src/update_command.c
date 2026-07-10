@@ -3,7 +3,7 @@
 #include "app_validation.h"
 #include "boot_flash.h"
 #include "boot_policy.h"
-#include "boot_state_store.h"
+#include "boot/boot_state_store.h"
 #include "hal/uart.h"
 #include "image/flash_layout.h"
 
@@ -25,7 +25,6 @@ static int command_is_supported(uint8_t command)
            (command == UPDATE_CMD_VALIDATE) ||
            (command == UPDATE_CMD_ACTIVATE) ||
            (command == UPDATE_CMD_ABORT) ||
-           (command == UPDATE_CMD_CONFIRM) ||
            (command == UPDATE_CMD_ENTER_UPDATE);
 }
 
@@ -190,19 +189,6 @@ static update_status_t handle_activate(boot_update_loop_t *loop)
     return UPDATE_STATUS_OK;
 }
 
-static update_status_t handle_confirm(void)
-{
-    boot_state_record_t state;
-
-    boot_state_store_load(&state);
-    boot_policy_confirm_pending(&state);
-    if (!boot_state_store_save_next(&state)) {
-        return UPDATE_STATUS_FLASH_ERROR;
-    }
-
-    return UPDATE_STATUS_OK;
-}
-
 static update_status_t handle_packet(boot_update_loop_t *loop,
                                      const update_packet_t *packet)
 {
@@ -232,8 +218,6 @@ static update_status_t handle_packet(boot_update_loop_t *loop,
         return UPDATE_STATUS_OK;
     case UPDATE_CMD_ACTIVATE:
         return handle_activate(loop);
-    case UPDATE_CMD_CONFIRM:
-        return handle_confirm();
     default:
         return UPDATE_STATUS_INVALID_ARGUMENT;
     }

@@ -38,7 +38,7 @@ $(error Unknown APP_SLOT '$(APP_SLOT)'; expected A or B)
 endif
 APP_FLASH_SIZE := $(APP_SLOT_SIZE)
 
-DEFINES   := $(BOARD_DEFINES) -DTRACE_SWO_BAUD=$(SWO_BAUD)U -DWATCHDOG_TIMEOUT_MS=$(WATCHDOG_TIMEOUT_MS)U
+DEFINES   := $(BOARD_DEFINES) -DTRACE_SWO_BAUD=$(SWO_BAUD)U -DWATCHDOG_TIMEOUT_MS=$(WATCHDOG_TIMEOUT_MS)U -DBOOT_CONFIRM_STABILIZATION_MS=$(BOOT_CONFIRM_STABILIZATION_MS)U
 INCLUDES  := \
   -Isrc \
   -I$(SHARED) \
@@ -49,16 +49,22 @@ ASFLAGS := $(MCU_FLAGS) -g3
 LDFLAGS := $(MCU_FLAGS) -Tlinker.ld -Wl,--defsym=APP_FLASH_ORIGIN=$(APP_FLASH_ADDR) -Wl,--defsym=APP_FLASH_LENGTH=$(APP_FLASH_SIZE) -Wl,--gc-sections -Wl,-Map=$(BUILD_DIR)/$(PROJECT).map --specs=nano.specs --specs=nosys.specs
 
 APP_LOCAL_SRCS := \
-  src/main.c \
+  src/app.c \
   src/app_manifest.c \
-  src/led_task.c \
-  src/update_agent.c
+  src/led_task.c
 
 HAL_SRCS := \
+  $(SHARED)/platform/runtime.c \
+  $(SHARED)/platform/boot_confirmation.c \
+  $(SHARED)/platform/boot_confirmation_store.c \
+  $(SHARED)/platform/health_supervisor.c \
+  $(SHARED)/platform/update_agent.c \
+  $(SHARED)/boot/boot_state.c \
   $(SHARED)/fault/fault_report.c \
   $(FAULT_IMPL_SRC) \
   $(SHARED)/libc/syscalls.c \
   $(HAL_IMPL_DIR)/critical.c \
+  $(HAL_IMPL_DIR)/boot_state_store.c \
   $(HAL_IMPL_DIR)/gpio.c \
   $(HAL_IMPL_DIR)/systick.c \
   $(HAL_IMPL_DIR)/itm.c \
@@ -94,8 +100,22 @@ UNITY := $(REPO_ROOT)/vendor/unity/src
 TEST_LED_SRCS := \
   test/test_led_task.c \
   src/led_task.c \
-  $(SHARED)/hal_impl/mock/gpio.c \
-  $(SHARED)/hal_impl/mock/systick.c \
+  $(UNITY)/unity.c
+
+TEST_APP_SRCS := \
+  test/test_app.c \
+  src/app.c \
+  src/led_task.c \
+  $(UNITY)/unity.c
+
+TEST_HEALTH_SRCS := \
+  test/test_health_supervisor.c \
+  $(SHARED)/platform/health_supervisor.c \
+  $(UNITY)/unity.c
+
+TEST_BOOT_CONFIRM_SRCS := \
+  test/test_boot_confirmation.c \
+  $(SHARED)/platform/boot_confirmation.c \
   $(UNITY)/unity.c
 
 TEST_TRACE_SRCS := \
@@ -136,13 +156,16 @@ TEST_UPDATE_STREAM_SRCS := \
 
 TEST_UPDATE_AGENT_SRCS := \
   test/test_update_agent.c \
-  src/update_agent.c \
+  $(SHARED)/platform/update_agent.c \
   $(SHARED)/hal_impl/mock/uart.c \
   $(SHARED)/update/update_protocol.c \
   $(SHARED)/update/update_stream.c \
   $(UNITY)/unity.c
 
 TEST_LED_BIN := $(TEST_DIR)/test_led_task
+TEST_APP_BIN := $(TEST_DIR)/test_app
+TEST_HEALTH_BIN := $(TEST_DIR)/test_health_supervisor
+TEST_BOOT_CONFIRM_BIN := $(TEST_DIR)/test_boot_confirmation
 TEST_TRACE_BIN := $(TEST_DIR)/test_trace
 TEST_FAULT_BIN := $(TEST_DIR)/test_fault_report
 TEST_WATCHDOG_BIN := $(TEST_DIR)/test_watchdog
@@ -153,8 +176,11 @@ TEST_UPDATE_AGENT_BIN := $(TEST_DIR)/test_update_agent
 
 TEST_CFLAGS := -Isrc -I$(SHARED) -I$(UNITY) -std=c11 -Wall -Wextra -Werror -g
 
-test: $(TEST_LED_BIN) $(TEST_TRACE_BIN) $(TEST_FAULT_BIN) $(TEST_WATCHDOG_BIN) $(TEST_CAN_BIN) $(TEST_UPDATE_PROTOCOL_BIN) $(TEST_UPDATE_STREAM_BIN) $(TEST_UPDATE_AGENT_BIN)
+test: $(TEST_LED_BIN) $(TEST_APP_BIN) $(TEST_HEALTH_BIN) $(TEST_BOOT_CONFIRM_BIN) $(TEST_TRACE_BIN) $(TEST_FAULT_BIN) $(TEST_WATCHDOG_BIN) $(TEST_CAN_BIN) $(TEST_UPDATE_PROTOCOL_BIN) $(TEST_UPDATE_STREAM_BIN) $(TEST_UPDATE_AGENT_BIN)
 	./$(TEST_LED_BIN)
+	./$(TEST_APP_BIN)
+	./$(TEST_HEALTH_BIN)
+	./$(TEST_BOOT_CONFIRM_BIN)
 	./$(TEST_TRACE_BIN)
 	./$(TEST_FAULT_BIN)
 	./$(TEST_WATCHDOG_BIN)
@@ -165,6 +191,15 @@ test: $(TEST_LED_BIN) $(TEST_TRACE_BIN) $(TEST_FAULT_BIN) $(TEST_WATCHDOG_BIN) $
 	cd $(REPO_ROOT) && $(PYTHON) -m unittest tools.test_trace_tools tools.test_finalize_image tools.test_uart_update tools.test_boot_state_image
 
 $(TEST_LED_BIN): $(TEST_LED_SRCS) | $(TEST_DIR)
+	gcc $(TEST_CFLAGS) $^ -o $@
+
+$(TEST_APP_BIN): $(TEST_APP_SRCS) | $(TEST_DIR)
+	gcc $(TEST_CFLAGS) $^ -o $@
+
+$(TEST_HEALTH_BIN): $(TEST_HEALTH_SRCS) | $(TEST_DIR)
+	gcc $(TEST_CFLAGS) $^ -o $@
+
+$(TEST_BOOT_CONFIRM_BIN): $(TEST_BOOT_CONFIRM_SRCS) | $(TEST_DIR)
 	gcc $(TEST_CFLAGS) $^ -o $@
 
 $(TEST_TRACE_BIN): $(TEST_TRACE_SRCS) | $(TEST_DIR)

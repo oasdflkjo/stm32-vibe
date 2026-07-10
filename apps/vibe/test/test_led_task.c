@@ -1,37 +1,54 @@
-#include "unity.h"
 #include "led_task.h"
-#include "hal/gpio.h"
+#include "unity.h"
 
-void setUp(void)    { led_task_init(); }
+static bool output;
+static uint32_t writes;
+
+static void set_output(bool enabled)
+{
+    output = enabled;
+    writes++;
+}
+
+void setUp(void)
+{
+    output = true;
+    writes = 0U;
+    led_task_init(set_output, 100U);
+}
+
 void tearDown(void) {}
 
 void test_led_starts_off(void)
 {
-    TEST_ASSERT_EQUAL(GPIO_PIN_RESET, gpio_led_get_state());
+    TEST_ASSERT_FALSE(output);
+    TEST_ASSERT_EQUAL_UINT32(1U, writes);
 }
 
-void test_led_toggles(void)
+void test_led_toggles_only_at_deadline(void)
 {
-    led_task_run();
-    TEST_ASSERT_EQUAL(GPIO_PIN_SET, gpio_led_get_state());
-    led_task_run();
-    TEST_ASSERT_EQUAL(GPIO_PIN_RESET, gpio_led_get_state());
+    led_task_process(599U);
+    TEST_ASSERT_FALSE(output);
+    led_task_process(600U);
+    TEST_ASSERT_TRUE(output);
+    led_task_process(1100U);
+    TEST_ASSERT_FALSE(output);
 }
 
-void test_led_even_toggles_return_to_reset(void)
+void test_led_deadline_handles_clock_wraparound(void)
 {
-    for (int i = 0; i < 10; i++) {
-        led_task_run();
-    }
-    /* 10 toggles from RESET → even → back to RESET */
-    TEST_ASSERT_EQUAL(GPIO_PIN_RESET, gpio_led_get_state());
+    led_task_init(set_output, UINT32_MAX - 100U);
+    led_task_process(398U);
+    TEST_ASSERT_FALSE(output);
+    led_task_process(399U);
+    TEST_ASSERT_TRUE(output);
 }
 
 int main(void)
 {
     UNITY_BEGIN();
     RUN_TEST(test_led_starts_off);
-    RUN_TEST(test_led_toggles);
-    RUN_TEST(test_led_even_toggles_return_to_reset);
+    RUN_TEST(test_led_toggles_only_at_deadline);
+    RUN_TEST(test_led_deadline_handles_clock_wraparound);
     return UNITY_END();
 }

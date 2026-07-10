@@ -1,7 +1,9 @@
 #pragma once
 
-typedef void (*led_task_idle_fn_t)(void);
+#include <stdbool.h>
+#include <stdint.h>
 
-void led_task_init(void);
-void led_task_run(void);
-void led_task_run_with_idle(led_task_idle_fn_t idle);
+typedef void (*led_task_output_fn_t)(bool enabled);
+
+void led_task_init(led_task_output_fn_t output, uint32_t now_ms);
+void led_task_process(uint32_t now_ms);

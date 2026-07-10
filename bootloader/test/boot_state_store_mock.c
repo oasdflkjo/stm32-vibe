@@ -1,4 +1,4 @@
-#include "boot_state_store.h"
+#include "boot/boot_state_store.h"
 
 static boot_state_record_t stored_state;
 static int has_state;

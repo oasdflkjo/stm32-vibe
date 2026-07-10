@@ -1,4 +1,4 @@
-#include "boot_state_store.h"
+#include "boot/boot_state_store.h"
 #include "image/flash_layout.h"
 #include "stm32l1xx.h"
 
@@ -52,6 +52,7 @@ static int unlock_flash(void)
 static void lock_flash(void)
 {
     FLASH->PECR |= FLASH_PECR_PRGLOCK;
+    FLASH->PECR |= FLASH_PECR_PELOCK;
 }
 
 static int erase_page(uint32_t address)

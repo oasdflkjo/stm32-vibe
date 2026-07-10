@@ -1,5 +1,5 @@
 #include "hal/uart_mock.h"
-#include "update_agent.h"
+#include "platform/update_agent.h"
 #include "update/update_protocol.h"
 #include "unity.h"
 

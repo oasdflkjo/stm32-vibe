@@ -225,6 +225,21 @@ void test_poll_rejects_unknown_command(void)
     TEST_ASSERT_EQUAL_UINT8(UPDATE_STATUS_INVALID_ARGUMENT, ack.payload[1]);
 }
 
+void test_poll_rejects_remote_confirmation(void)
+{
+    uint8_t encoded[UPDATE_PROTOCOL_MAX_PACKET_SIZE];
+    uint8_t ack_payload[UPDATE_PROTOCOL_MAX_PAYLOAD];
+    size_t encoded_len = encode_command(UPDATE_CMD_CONFIRM, encoded);
+
+    TEST_ASSERT_EQUAL(UART_RESULT_OK, uart_mock_push_rx(encoded, encoded_len));
+    TEST_ASSERT_EQUAL_UINT32(1U, boot_update_loop_poll(&loop).packets_received);
+
+    update_packet_t ack = pop_ack(ack_payload);
+    TEST_ASSERT_EQUAL_UINT8(UPDATE_CMD_CONFIRM, ack.payload[0]);
+    TEST_ASSERT_EQUAL_UINT8(UPDATE_STATUS_INVALID_ARGUMENT, ack.payload[1]);
+    TEST_ASSERT_NULL(boot_state_store_mock_state());
+}
+
 void test_update_session_writes_and_validates_inactive_slot_b(void)
 {
     uint8_t begin_payload[8];
@@ -447,6 +462,7 @@ int main(void)
     RUN_TEST(test_poll_feeds_split_packet_and_sends_ack);
     RUN_TEST(test_poll_reports_bad_crc_and_sends_error_ack);
     RUN_TEST(test_poll_rejects_unknown_command);
+    RUN_TEST(test_poll_rejects_remote_confirmation);
     RUN_TEST(test_update_session_writes_and_validates_inactive_slot_b);
     RUN_TEST(test_block_before_begin_returns_bad_state);
     RUN_TEST(test_out_of_order_block_returns_bad_sequence);

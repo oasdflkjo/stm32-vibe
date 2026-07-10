@@ -1,6 +1,6 @@
 #pragma once
 
-#include "boot_state_store.h"
+#include "boot/boot_state_store.h"
 
 void boot_state_store_mock_reset(void);
 void boot_state_store_mock_set_state(const boot_state_record_t *state);

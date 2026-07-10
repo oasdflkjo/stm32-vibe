@@ -21,6 +21,7 @@ typedef enum {
     UPDATE_CMD_VALIDATE = 6,
     UPDATE_CMD_ACTIVATE = 7,
     UPDATE_CMD_ABORT = 8,
+    /* Reserved wire value. Remote confirmation is intentionally rejected. */
     UPDATE_CMD_CONFIRM = 9,
     UPDATE_CMD_ACK = 10,
     UPDATE_CMD_ENTER_UPDATE = 11,

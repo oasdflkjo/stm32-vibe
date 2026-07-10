@@ -138,3 +138,35 @@ uint32_t boot_state_status_for_slot(const boot_state_record_t *state,
 
     return BOOT_SLOT_STATUS_BAD;
 }
+
+int boot_state_confirm_pending(boot_state_record_t *state)
+{
+    uint32_t pending_slot;
+
+    if ((state == 0) || (state->pending_slot == BOOT_STATE_NO_SLOT)) {
+        return 0;
+    }
+
+    pending_slot = state->pending_slot;
+    if (pending_slot == BOOT_SLOT_A) {
+        state->slot_a_status = BOOT_SLOT_STATUS_CONFIRMED;
+        state->slot_b_status = BOOT_SLOT_STATUS_VALID;
+    } else if (pending_slot == BOOT_SLOT_B) {
+        state->slot_a_status = BOOT_SLOT_STATUS_VALID;
+        state->slot_b_status = BOOT_SLOT_STATUS_CONFIRMED;
+    } else {
+        return 0;
+    }
+
+    state->active_slot = pending_slot;
+    state->confirmed_version = state->reserved[BOOT_STATE_PENDING_VERSION_WORD];
+    state->confirmed_image_crc32 =
+        state->reserved[BOOT_STATE_PENDING_CRC32_WORD];
+    state->reserved[BOOT_STATE_PENDING_VERSION_WORD] = 0U;
+    state->reserved[BOOT_STATE_PENDING_CRC32_WORD] = 0U;
+    state->pending_slot = BOOT_STATE_NO_SLOT;
+    state->pending_attempts = 0U;
+    state->generation++;
+    boot_state_update_crc(state);
+    return 1;
+}

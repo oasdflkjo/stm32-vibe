@@ -40,6 +40,13 @@ boot_candidate_t boot_policy_select_candidate(boot_state_record_t *state)
     uint8_t boot_pending = 0U;
 
     if ((state->pending_slot != BOOT_STATE_NO_SLOT) &&
+        (state->pending_attempts >= BOOT_STATE_MAX_PENDING_ATTEMPTS) &&
+        (status_for_slot(state, state->pending_slot) ==
+         BOOT_SLOT_STATUS_PENDING)) {
+        boot_policy_mark_pending_bad(state);
+    }
+
+    if ((state->pending_slot != BOOT_STATE_NO_SLOT) &&
         (state->pending_attempts < BOOT_STATE_MAX_PENDING_ATTEMPTS) &&
         (status_for_slot(state, state->pending_slot) ==
          BOOT_SLOT_STATUS_PENDING)) {
@@ -108,20 +115,5 @@ void boot_policy_mark_slot_pending(boot_state_record_t *state,
 
 void boot_policy_confirm_pending(boot_state_record_t *state)
 {
-    if (state->pending_slot == BOOT_STATE_NO_SLOT) {
-        return;
-    }
-
-    set_status_for_slot(state, state->active_slot, BOOT_SLOT_STATUS_VALID);
-    state->active_slot = state->pending_slot;
-    set_status_for_slot(state, state->active_slot, BOOT_SLOT_STATUS_CONFIRMED);
-    state->confirmed_version = state->reserved[BOOT_STATE_PENDING_VERSION_WORD];
-    state->confirmed_image_crc32 =
-        state->reserved[BOOT_STATE_PENDING_CRC32_WORD];
-    state->reserved[BOOT_STATE_PENDING_VERSION_WORD] = 0U;
-    state->reserved[BOOT_STATE_PENDING_CRC32_WORD] = 0U;
-    state->pending_slot = BOOT_STATE_NO_SLOT;
-    state->pending_attempts = 0U;
-    state->generation++;
-    boot_state_update_crc(state);
+    (void)boot_state_confirm_pending(state);
 }

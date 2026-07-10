@@ -4,7 +4,7 @@
 #include "boot/boot_state.h"
 #include "boot/update_handoff.h"
 #include "boot_policy.h"
-#include "boot_state_store.h"
+#include "boot/boot_state_store.h"
 #include "fault/fault.h"
 #include "hal/itm.h"
 #include "hal/uart.h"
@@ -105,6 +105,7 @@ int main(void)
     app_image_result_t image_result;
     boot_state_record_t boot_state;
     boot_candidate_t candidate;
+    uint32_t boot_state_generation;
     const uint32_t *app_vectors;
     uint32_t stack_pointer;
     uint32_t reset_handler;
@@ -128,8 +129,9 @@ int main(void)
     probe_update_mode();
 
     boot_state_store_load(&boot_state);
+    boot_state_generation = boot_state.generation;
     candidate = boot_policy_select_candidate(&boot_state);
-    if (candidate.boot_pending != 0U) {
+    if (boot_state.generation != boot_state_generation) {
         (void)boot_state_store_save_next(&boot_state);
     }
     TRACE("BOOT state active=%u pending=%u gen=%u",

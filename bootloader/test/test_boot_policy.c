@@ -47,7 +47,7 @@ void test_selects_pending_slot_and_increments_attempt(void)
     TEST_ASSERT_EQUAL(BOOT_STATE_VALID, boot_state_validate(&state));
 }
 
-void test_exhausted_pending_slot_falls_back_to_active(void)
+void test_exhausted_pending_slot_is_marked_bad_and_falls_back(void)
 {
     set_confirmed_slot_a();
     boot_policy_mark_slot_pending(&state, BOOT_SLOT_B, 4U, 0x12345678U);
@@ -58,6 +58,10 @@ void test_exhausted_pending_slot_falls_back_to_active(void)
 
     TEST_ASSERT_EQUAL_UINT32(BOOT_SLOT_A, candidate.slot);
     TEST_ASSERT_EQUAL_UINT8(0U, candidate.boot_pending);
+    TEST_ASSERT_EQUAL_UINT32(BOOT_STATE_NO_SLOT, state.pending_slot);
+    TEST_ASSERT_EQUAL_UINT32(0U, state.pending_attempts);
+    TEST_ASSERT_EQUAL_UINT32(BOOT_SLOT_STATUS_BAD, state.slot_b_status);
+    TEST_ASSERT_EQUAL(BOOT_STATE_VALID, boot_state_validate(&state));
 }
 
 void test_marks_pending_slot_bad(void)
@@ -118,7 +122,7 @@ int main(void)
     UNITY_BEGIN();
     RUN_TEST(test_selects_confirmed_active_slot_by_default);
     RUN_TEST(test_selects_pending_slot_and_increments_attempt);
-    RUN_TEST(test_exhausted_pending_slot_falls_back_to_active);
+    RUN_TEST(test_exhausted_pending_slot_is_marked_bad_and_falls_back);
     RUN_TEST(test_marks_pending_slot_bad);
     RUN_TEST(test_confirms_pending_slot);
     RUN_TEST(test_inactive_slot_is_opposite_active_slot);
