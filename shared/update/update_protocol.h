@@ -23,6 +23,7 @@ typedef enum {
     UPDATE_CMD_ABORT = 8,
     UPDATE_CMD_CONFIRM = 9,
     UPDATE_CMD_ACK = 10,
+    UPDATE_CMD_ENTER_UPDATE = 11,
 } update_command_t;
 
 typedef enum {

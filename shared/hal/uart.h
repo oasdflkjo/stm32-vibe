@@ -14,3 +14,4 @@ typedef enum {
 uart_result_t uart_init(uint32_t baudrate);
 uart_result_t uart_receive_byte(uint8_t *byte);
 uart_result_t uart_send(const uint8_t *data, size_t len);
+uart_result_t uart_drain_tx(void);

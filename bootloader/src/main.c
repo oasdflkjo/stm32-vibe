@@ -2,6 +2,7 @@
 #include "app_image.h"
 #include "app_validation.h"
 #include "boot/boot_state.h"
+#include "boot/update_handoff.h"
 #include "boot_policy.h"
 #include "boot_state_store.h"
 #include "fault/fault.h"
@@ -53,6 +54,17 @@ static void jump_to_app(uint32_t vector_base,
     start_app(stack_pointer, reset_handler);
 }
 
+static void run_update_loop_forever(boot_update_loop_t *update_loop)
+{
+    while (1) {
+        (void)boot_update_loop_poll(update_loop);
+        if (update_loop->reset_requested != 0U) {
+            (void)uart_drain_tx();
+            NVIC_SystemReset();
+        }
+    }
+}
+
 static void enter_update_mode(void)
 {
     boot_update_loop_t update_loop;
@@ -60,10 +72,30 @@ static void enter_update_mode(void)
     if (uart_init(BOOT_UPDATE_UART_BAUD) == UART_RESULT_OK) {
         TRACE("BOOT update uart ready baud=%u", BOOT_UPDATE_UART_BAUD);
         boot_update_loop_init(&update_loop);
-        boot_update_loop_run_forever(&update_loop);
+        run_update_loop_forever(&update_loop);
     }
     TRACE("BOOT update uart init failed");
     while (1) {
+    }
+}
+
+static void probe_update_mode(void)
+{
+    boot_update_loop_t update_loop;
+
+    if (uart_init(BOOT_UPDATE_UART_BAUD) != UART_RESULT_OK) {
+        return;
+    }
+
+    boot_update_loop_init(&update_loop);
+    for (uint32_t poll = 0U; poll < BOOT_UPDATE_PROBE_POLLS; poll++) {
+        boot_update_poll_result_t result = boot_update_loop_poll(&update_loop);
+        if ((result.bytes_received != 0U) || (result.packets_received != 0U) ||
+            (result.parse_errors != 0U)) {
+            TRACE("BOOT update probe hit bytes=%u packets=%u",
+                  result.bytes_received, result.packets_received);
+            run_update_loop_forever(&update_loop);
+        }
     }
 }
 
@@ -83,8 +115,17 @@ int main(void)
     if ((reset_cause & RCC_CSR_IWDGRSTF) != 0U) {
         TRACE("BOOT reset cause=watchdog");
     }
+    if (update_handoff_take()) {
+        TRACE("BOOT update handoff");
+        RCC->CSR |= RCC_CSR_RMVF;
+        enter_update_mode();
+    }
+    if ((reset_cause & RCC_CSR_SFTRSTF) != 0U) {
+        TRACE("BOOT reset cause=software update");
+    }
     RCC->CSR |= RCC_CSR_RMVF;
     TRACE("BOOT start");
+    probe_update_mode();
 
     boot_state_store_load(&boot_state);
     candidate = boot_policy_select_candidate(&boot_state);

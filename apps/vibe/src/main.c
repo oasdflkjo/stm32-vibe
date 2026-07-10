@@ -1,13 +1,29 @@
 #include "led_task.h"
+#include "update_agent.h"
+#include "boot/update_handoff.h"
 #include "fault/fault.h"
 #include "hal/watchdog.h"
 #include "trace/trace.h"
 
-#ifdef ENABLE_SWO_TRACE
-#include "hal/itm.h"
 #include "stm32l1xx.h"
 
+#ifdef ENABLE_SWO_TRACE
+#include "hal/itm.h"
 #endif
+
+__attribute__((noreturn))
+static void system_reset(void)
+{
+    update_handoff_request();
+    __DSB();
+    NVIC_SystemReset();
+}
+
+static void idle_update(void)
+{
+    update_agent_poll();
+    watchdog_refresh();
+}
 
 int main(void)
 {
@@ -19,6 +35,7 @@ int main(void)
     fault_handlers_init();
 
     led_task_init();
+    update_agent_init(system_reset);
     TRACE("SWO ready");
 
 #ifdef ENABLE_FAULT_TEST
@@ -39,7 +56,9 @@ int main(void)
 #endif
 
     while (1) {
-        led_task_run();
+        update_agent_poll();
+        led_task_run_with_idle(idle_update);
+        update_agent_poll();
 #ifdef ENABLE_SWO_TRACE
         toggle_count++;
 #endif

@@ -11,10 +11,12 @@ APP_DIR := apps/$(APP)
 
 COMBINED_DIR := build
 COMBINED_HEX := $(COMBINED_DIR)/combined.hex
+COMBINED_SLOTS_HEX := $(COMBINED_DIR)/combined-slots.hex
+COMBINED_SLOTS_BIN := $(COMBINED_DIR)/combined-slots.bin
 
 ALL_PROJECTS := bootloader $(APP_DIR)
 
-.PHONY: all _firmware _combined clean test flash flash-swo flash-fault-test flash-watchdog-test flash-bootloader flash-app firmware-slot-b flash-app-slot-b container-build container-shell $(ALL_PROJECTS)
+.PHONY: all _firmware _combined clean test combined-slots flash-combined-slots flash flash-swo flash-fault-test flash-watchdog-test flash-bootloader flash-app firmware-slot-b flash-app-slot-b container-build container-shell $(ALL_PROJECTS)
 
 # ── Developer entry points (run everything inside the container) ──────────────
 all: container-build
@@ -29,6 +31,27 @@ container-build:
 # ── Flash targets (run on host, require st-flash + USB access) ────────────────
 flash: $(COMBINED_HEX)
 	st-flash --reset --format ihex write $(COMBINED_HEX)
+
+combined-slots:
+	tools/build_flash_image.sh \
+		--output $(COMBINED_SLOTS_HEX) \
+		--bin-output $(COMBINED_SLOTS_BIN) \
+		--flash-addr $(BOOTLOADER_FLASH_ADDR) \
+		--boot-state-addr $(BOOT_STATE_FLASH_ADDR) \
+		--boot-state-size $(BOOT_STATE_FLASH_SIZE) \
+		--slot-a-addr $(APP_SLOT_A_FLASH_ADDR) \
+		--slot-b-addr $(APP_SLOT_B_FLASH_ADDR)
+
+flash-combined-slots:
+	tools/build_flash_image.sh \
+		--output $(COMBINED_SLOTS_HEX) \
+		--bin-output $(COMBINED_SLOTS_BIN) \
+		--flash-addr $(BOOTLOADER_FLASH_ADDR) \
+		--boot-state-addr $(BOOT_STATE_FLASH_ADDR) \
+		--boot-state-size $(BOOT_STATE_FLASH_SIZE) \
+		--slot-a-addr $(APP_SLOT_A_FLASH_ADDR) \
+		--slot-b-addr $(APP_SLOT_B_FLASH_ADDR) \
+		--flash
 
 flash-bootloader: bootloader/build/bootloader.bin
 	st-flash --reset write bootloader/build/bootloader.bin $(BOOTLOADER_FLASH_ADDR)

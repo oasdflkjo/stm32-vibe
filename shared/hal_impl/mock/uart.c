@@ -90,6 +90,15 @@ uart_result_t uart_send(const uint8_t *data, size_t len)
     return UART_RESULT_OK;
 }
 
+uart_result_t uart_drain_tx(void)
+{
+    if (initialized == 0U) {
+        return UART_RESULT_NOT_READY;
+    }
+
+    return UART_RESULT_OK;
+}
+
 uart_result_t uart_mock_push_rx(const uint8_t *data, size_t len)
 {
     if ((len != 0U) && (data == 0)) {

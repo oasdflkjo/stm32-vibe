@@ -71,6 +71,17 @@ The branch is ready to continue from a clean protocol foundation:
 - The next implementation step is host-side updater tooling that reads the JSON
   sidecar, sends `BEGIN` metadata, streams `BLOCK` packets, and activates the
   candidate.
+- `tools/uart_update.py` is the host-side UART updater. It reads the binary and
+  JSON sidecar, verifies size/CRC/application/board metadata, streams the image
+  in protocol packets, validates the candidate, and optionally activates it. It
+  includes a lightweight terminal UI with connection state, progress, and
+  updater logs, plus a plain-log fallback.
+- The app includes a minimal UART update agent. It ACKs discovery, rejects
+  direct flash-write commands while the app is running, and handles
+  `ENTER_UPDATE` by ACKing and requesting a system reset so the host can
+  continue with the bootloader.
+- The bootloader probes UART briefly at reset before jumping a valid app, so the
+  host updater can catch the bootloader after the app-requested reset.
 - CAN transport should later fragment the same protocol packets into classic
   CAN frames.
 

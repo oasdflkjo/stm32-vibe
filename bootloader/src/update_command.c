@@ -25,7 +25,8 @@ static int command_is_supported(uint8_t command)
            (command == UPDATE_CMD_VALIDATE) ||
            (command == UPDATE_CMD_ACTIVATE) ||
            (command == UPDATE_CMD_ABORT) ||
-           (command == UPDATE_CMD_CONFIRM);
+           (command == UPDATE_CMD_CONFIRM) ||
+           (command == UPDATE_CMD_ENTER_UPDATE);
 }
 
 static void send_ack(boot_update_loop_t *loop,
@@ -167,6 +168,7 @@ static update_status_t handle_activate(boot_update_loop_t *loop)
         return UPDATE_STATUS_FLASH_ERROR;
     }
 
+    loop->reset_requested = 1U;
     return UPDATE_STATUS_OK;
 }
 
@@ -189,6 +191,7 @@ static update_status_t handle_packet(boot_update_loop_t *loop,
     switch (packet->command) {
     case UPDATE_CMD_DISCOVER:
     case UPDATE_CMD_STATUS:
+    case UPDATE_CMD_ENTER_UPDATE:
         return UPDATE_STATUS_OK;
     case UPDATE_CMD_BEGIN:
         return handle_begin(loop, packet);

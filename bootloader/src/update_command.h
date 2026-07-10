@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #define BOOT_UPDATE_UART_BAUD 115200U
+#define BOOT_UPDATE_PROBE_POLLS 10000U
 
 typedef struct {
     update_stream_t stream;
@@ -19,6 +20,7 @@ typedef struct {
     uint8_t session_active;
     uint8_t transfer_complete;
     uint8_t candidate_valid;
+    uint8_t reset_requested;
 } boot_update_loop_t;
 
 typedef struct {

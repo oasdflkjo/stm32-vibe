@@ -51,7 +51,8 @@ LDFLAGS := $(MCU_FLAGS) -Tlinker.ld -Wl,--defsym=APP_FLASH_ORIGIN=$(APP_FLASH_AD
 APP_LOCAL_SRCS := \
   src/main.c \
   src/app_manifest.c \
-  src/led_task.c
+  src/led_task.c \
+  src/update_agent.c
 
 HAL_SRCS := \
   $(SHARED)/fault/fault_report.c \
@@ -61,8 +62,11 @@ HAL_SRCS := \
   $(HAL_IMPL_DIR)/gpio.c \
   $(HAL_IMPL_DIR)/systick.c \
   $(HAL_IMPL_DIR)/itm.c \
+  $(HAL_IMPL_DIR)/uart.c \
   $(HAL_IMPL_DIR)/watchdog.c \
-  $(SHARED)/trace/trace.c
+  $(SHARED)/trace/trace.c \
+  $(SHARED)/update/update_protocol.c \
+  $(SHARED)/update/update_stream.c
 
 LOCAL_OBJS := $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(APP_LOCAL_SRCS))
 HAL_OBJS   := $(patsubst $(SHARED)/%.c,$(BUILD_DIR)/shared/%.o,$(HAL_SRCS))
@@ -130,6 +134,14 @@ TEST_UPDATE_STREAM_SRCS := \
   $(SHARED)/update/update_stream.c \
   $(UNITY)/unity.c
 
+TEST_UPDATE_AGENT_SRCS := \
+  test/test_update_agent.c \
+  src/update_agent.c \
+  $(SHARED)/hal_impl/mock/uart.c \
+  $(SHARED)/update/update_protocol.c \
+  $(SHARED)/update/update_stream.c \
+  $(UNITY)/unity.c
+
 TEST_LED_BIN := $(TEST_DIR)/test_led_task
 TEST_TRACE_BIN := $(TEST_DIR)/test_trace
 TEST_FAULT_BIN := $(TEST_DIR)/test_fault_report
@@ -137,10 +149,11 @@ TEST_WATCHDOG_BIN := $(TEST_DIR)/test_watchdog
 TEST_CAN_BIN := $(TEST_DIR)/test_can
 TEST_UPDATE_PROTOCOL_BIN := $(TEST_DIR)/test_update_protocol
 TEST_UPDATE_STREAM_BIN := $(TEST_DIR)/test_update_stream
+TEST_UPDATE_AGENT_BIN := $(TEST_DIR)/test_update_agent
 
 TEST_CFLAGS := -Isrc -I$(SHARED) -I$(UNITY) -std=c11 -Wall -Wextra -Werror -g
 
-test: $(TEST_LED_BIN) $(TEST_TRACE_BIN) $(TEST_FAULT_BIN) $(TEST_WATCHDOG_BIN) $(TEST_CAN_BIN) $(TEST_UPDATE_PROTOCOL_BIN) $(TEST_UPDATE_STREAM_BIN)
+test: $(TEST_LED_BIN) $(TEST_TRACE_BIN) $(TEST_FAULT_BIN) $(TEST_WATCHDOG_BIN) $(TEST_CAN_BIN) $(TEST_UPDATE_PROTOCOL_BIN) $(TEST_UPDATE_STREAM_BIN) $(TEST_UPDATE_AGENT_BIN)
 	./$(TEST_LED_BIN)
 	./$(TEST_TRACE_BIN)
 	./$(TEST_FAULT_BIN)
@@ -148,7 +161,8 @@ test: $(TEST_LED_BIN) $(TEST_TRACE_BIN) $(TEST_FAULT_BIN) $(TEST_WATCHDOG_BIN) $
 	./$(TEST_CAN_BIN)
 	./$(TEST_UPDATE_PROTOCOL_BIN)
 	./$(TEST_UPDATE_STREAM_BIN)
-	cd $(REPO_ROOT) && $(PYTHON) -m unittest tools.test_trace_tools tools.test_finalize_image
+	./$(TEST_UPDATE_AGENT_BIN)
+	cd $(REPO_ROOT) && $(PYTHON) -m unittest tools.test_trace_tools tools.test_finalize_image tools.test_uart_update
 
 $(TEST_LED_BIN): $(TEST_LED_SRCS) | $(TEST_DIR)
 	gcc $(TEST_CFLAGS) $^ -o $@
@@ -169,6 +183,9 @@ $(TEST_UPDATE_PROTOCOL_BIN): $(TEST_UPDATE_PROTOCOL_SRCS) | $(TEST_DIR)
 	gcc $(TEST_CFLAGS) $^ -o $@
 
 $(TEST_UPDATE_STREAM_BIN): $(TEST_UPDATE_STREAM_SRCS) | $(TEST_DIR)
+	gcc $(TEST_CFLAGS) $^ -o $@
+
+$(TEST_UPDATE_AGENT_BIN): $(TEST_UPDATE_AGENT_SRCS) | $(TEST_DIR)
 	gcc $(TEST_CFLAGS) $^ -o $@
 
 $(TEST_DIR):

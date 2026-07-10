@@ -123,6 +123,47 @@ make firmware-slot-b
 make -C apps/vibe firmware-slot-b
 ```
 
+Build one ST-LINK-flashable image containing the bootloader, slot-A app, and
+slot-B app:
+
+```sh
+make combined-slots
+```
+
+Build and flash it in one step. This uses the faster segmented binary flash path
+instead of writing the padded combined image:
+
+```sh
+make flash-combined-slots
+```
+
+The generated `build/combined-slots.bin` can also be flashed as a single file,
+but it includes padding between slot A and slot B:
+
+```sh
+st-flash --reset write build/combined-slots.bin 0x08000000
+```
+
+Send a slot-B image over the bootloader UART update path:
+
+```sh
+python3 tools/uart_update.py \
+  --port /dev/ttyACM0 \
+  --bin apps/vibe/build/slot-b/vibe.bin \
+  --metadata apps/vibe/build/slot-b/vibe.json \
+  --app-name vibe \
+  --board-name "ST NUCLEO-L152RE"
+```
+
+The updater opens a small terminal UI when stdout is interactive. It shows
+connection state, transfer progress, and updater logs. Use `--no-tui` for plain
+line logs or `--tui` to force the terminal UI.
+
+The running app listens for an `ENTER_UPDATE` packet, ACKs it, and requests a
+system reset. The updater then waits for the bootloader `DISCOVER` ACK before
+streaming the slot-B image. Install `pyserial` on the host if the `serial`
+module is missing.
+
 Run unit tests (host `gcc`, no cross-compilation needed):
 
 ```sh
@@ -145,6 +186,8 @@ Build outputs:
 
 ```text
 build/combined.hex              ← bootloader + app merged, ready to flash
+build/combined-slots.hex        ← bootloader + slot A + slot B
+build/combined-slots.bin        ← binary form for faster ST-LINK flashing
 bootloader/build/bootloader.elf / .bin / trace_map.json
 apps/vibe/build/vibe.elf / .bin / trace_map.json
 apps/vibe/build/vibe.json
