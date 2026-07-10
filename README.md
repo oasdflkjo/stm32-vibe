@@ -131,7 +131,8 @@ make combined-slots
 ```
 
 Build and flash it in one step. This uses the faster segmented binary flash path
-instead of writing the padded combined image:
+instead of writing the padded combined image, clears the boot-state page back to
+the default slot-A state, and resets the target after flashing:
 
 ```sh
 make flash-combined-slots
@@ -155,14 +156,22 @@ python3 tools/uart_update.py \
   --board-name "ST NUCLEO-L152RE"
 ```
 
+Install `pyserial` on the host if the `serial` module is missing:
+
+```sh
+python3 -m pip install pyserial
+```
+
 The updater opens a small terminal UI when stdout is interactive. It shows
 connection state, transfer progress, and updater logs. Use `--no-tui` for plain
 line logs or `--tui` to force the terminal UI.
 
 The running app listens for an `ENTER_UPDATE` packet, ACKs it, and requests a
 system reset. The updater then waits for the bootloader `DISCOVER` ACK before
-streaming the slot-B image. Install `pyserial` on the host if the `serial`
-module is missing.
+streaming the slot-B image. UART packets are paced by default for the current
+polling receiver (`--byte-delay`, `--app-reset-byte-delay`). After `ACTIVATE`,
+the bootloader ACKs the command, records slot B as pending, drains UART TX, and
+requests a device reset; no manual reset is required for the update handoff.
 
 Run unit tests (host `gcc`, no cross-compilation needed):
 
@@ -216,7 +225,14 @@ examples of task, trace, and diagnostic tests.
 
 ## Flashing
 
-Flash both bootloader and app in one shot (requires `st-flash` on host):
+For firmware-update testing, flash bootloader, erased boot state, slot A, and
+slot B in one shot (requires `st-flash` on host):
+
+```sh
+make flash-combined-slots
+```
+
+The older combined target flashes only the bootloader and slot-A app:
 
 ```sh
 make flash
