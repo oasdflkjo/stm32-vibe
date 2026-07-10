@@ -38,6 +38,7 @@ SRCS := \
   src/app_validation.c \
   src/boot_flash_stm32l1.c \
   src/boot_policy.c \
+  src/update_session.c \
   src/update_command.c
 
 SHARED_SRCS := \
@@ -93,6 +94,7 @@ TEST_UPDATE_COMMAND_SRCS := \
   src/app_image.c \
   src/app_validation.c \
   src/boot_policy.c \
+  src/update_session.c \
   test/boot_flash_mock.c \
   test/boot_state_store_mock.c \
   $(SHARED)/boot/boot_state.c \
@@ -100,13 +102,25 @@ TEST_UPDATE_COMMAND_SRCS := \
   $(SHARED)/update/update_protocol.c \
   $(SHARED)/update/update_stream.c \
   $(UNITY)/unity.c
+TEST_UPDATE_SESSION_BIN := $(TEST_DIR)/test_update_session
+TEST_UPDATE_SESSION_SRCS := \
+  test/test_update_session.c \
+  src/update_session.c \
+  src/app_image.c \
+  src/app_validation.c \
+  src/boot_policy.c \
+  test/boot_flash_mock.c \
+  test/boot_state_store_mock.c \
+  $(SHARED)/boot/boot_state.c \
+  $(UNITY)/unity.c
 TEST_CFLAGS := -Isrc -I$(SHARED) -I$(UNITY) -std=c11 -Wall -Wextra -Werror -g
 
-test: $(TEST_APP_VALIDATION_BIN) $(TEST_BOOT_STATE_BIN) $(TEST_BOOT_POLICY_BIN) $(TEST_UPDATE_COMMAND_BIN)
+test: $(TEST_APP_VALIDATION_BIN) $(TEST_BOOT_STATE_BIN) $(TEST_BOOT_POLICY_BIN) $(TEST_UPDATE_COMMAND_BIN) $(TEST_UPDATE_SESSION_BIN)
 	./$(TEST_APP_VALIDATION_BIN)
 	./$(TEST_BOOT_STATE_BIN)
 	./$(TEST_BOOT_POLICY_BIN)
 	./$(TEST_UPDATE_COMMAND_BIN)
+	./$(TEST_UPDATE_SESSION_BIN)
 
 $(TEST_APP_VALIDATION_BIN): $(TEST_APP_VALIDATION_SRCS) | $(TEST_DIR)
 	gcc $(TEST_CFLAGS) $^ -o $@
@@ -118,6 +132,9 @@ $(TEST_BOOT_POLICY_BIN): $(TEST_BOOT_POLICY_SRCS) | $(TEST_DIR)
 	gcc $(TEST_CFLAGS) $^ -o $@
 
 $(TEST_UPDATE_COMMAND_BIN): $(TEST_UPDATE_COMMAND_SRCS) | $(TEST_DIR)
+	gcc $(TEST_CFLAGS) $^ -o $@
+
+$(TEST_UPDATE_SESSION_BIN): $(TEST_UPDATE_SESSION_SRCS) | $(TEST_DIR)
 	gcc $(TEST_CFLAGS) $^ -o $@
 
 $(TEST_DIR):

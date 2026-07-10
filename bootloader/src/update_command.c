@@ -1,32 +1,6 @@
 #include "update_command.h"
-#include "app_image.h"
-#include "app_validation.h"
-#include "boot_flash.h"
-#include "boot_policy.h"
-#include "boot/boot_state_store.h"
+
 #include "hal/uart.h"
-#include "image/flash_layout.h"
-
-static uint32_t read_u32_le(const uint8_t *bytes)
-{
-    return (uint32_t)bytes[0] |
-           ((uint32_t)bytes[1] << 8U) |
-           ((uint32_t)bytes[2] << 16U) |
-           ((uint32_t)bytes[3] << 24U);
-}
-
-static int command_is_supported(uint8_t command)
-{
-    return (command == UPDATE_CMD_DISCOVER) ||
-           (command == UPDATE_CMD_STATUS) ||
-           (command == UPDATE_CMD_BEGIN) ||
-           (command == UPDATE_CMD_BLOCK) ||
-           (command == UPDATE_CMD_END) ||
-           (command == UPDATE_CMD_VALIDATE) ||
-           (command == UPDATE_CMD_ACTIVATE) ||
-           (command == UPDATE_CMD_ABORT) ||
-           (command == UPDATE_CMD_ENTER_UPDATE);
-}
 
 static void send_ack(boot_update_loop_t *loop,
                      uint8_t command,
@@ -45,181 +19,10 @@ static void send_ack(boot_update_loop_t *loop,
         .payload = payload,
     };
 
-    if (update_protocol_encode(&ack, encoded, sizeof(encoded), &encoded_len) !=
-        UPDATE_STATUS_OK) {
+    if ((update_protocol_encode(&ack, encoded, sizeof(encoded), &encoded_len) !=
+         UPDATE_STATUS_OK) ||
+        (uart_send(encoded, encoded_len) != UART_RESULT_OK)) {
         loop->tx_errors++;
-        return;
-    }
-
-    if (uart_send(encoded, encoded_len) != UART_RESULT_OK) {
-        loop->tx_errors++;
-    }
-}
-
-static update_status_t handle_begin(boot_update_loop_t *loop,
-                                    const update_packet_t *packet)
-{
-    boot_state_record_t state;
-    uint32_t image_size;
-    uint32_t image_crc32;
-    uint32_t target_slot;
-
-    if (packet->payload_len != 8U) {
-        return UPDATE_STATUS_BAD_LENGTH;
-    }
-
-    image_size = read_u32_le(&packet->payload[0]);
-    image_crc32 = read_u32_le(&packet->payload[4]);
-    if ((image_size == 0U) || (image_size > APP_SLOT_SIZE)) {
-        return UPDATE_STATUS_BAD_LENGTH;
-    }
-
-    boot_state_store_load(&state);
-    target_slot = boot_policy_inactive_slot(&state);
-
-    if (boot_flash_erase_slot(target_slot, image_size) != BOOT_FLASH_OK) {
-        return UPDATE_STATUS_FLASH_ERROR;
-    }
-
-    loop->expected_image_size = image_size;
-    loop->expected_image_crc32 = image_crc32;
-    loop->target_slot = target_slot;
-    loop->received_image_size = 0U;
-    loop->candidate_version = 0U;
-    loop->candidate_crc32 = 0U;
-    loop->session_active = 1U;
-    loop->transfer_complete = 0U;
-    loop->candidate_valid = 0U;
-    return UPDATE_STATUS_OK;
-}
-
-static update_status_t handle_block(boot_update_loop_t *loop,
-                                    const update_packet_t *packet)
-{
-    if (loop->session_active == 0U) {
-        return UPDATE_STATUS_BAD_STATE;
-    }
-
-    if ((packet->payload_len == 0U) ||
-        (packet->sequence != loop->received_image_size) ||
-        (packet->payload_len >
-         (loop->expected_image_size - loop->received_image_size))) {
-        return UPDATE_STATUS_BAD_SEQUENCE;
-    }
-
-    if (boot_flash_write_slot(loop->target_slot, packet->sequence,
-                              packet->payload,
-                              packet->payload_len) != BOOT_FLASH_OK) {
-        return UPDATE_STATUS_FLASH_ERROR;
-    }
-
-    loop->received_image_size += packet->payload_len;
-    return UPDATE_STATUS_OK;
-}
-
-static update_status_t handle_end(boot_update_loop_t *loop)
-{
-    if (loop->session_active == 0U) {
-        return UPDATE_STATUS_BAD_STATE;
-    }
-
-    if (loop->received_image_size != loop->expected_image_size) {
-        return UPDATE_STATUS_BAD_LENGTH;
-    }
-
-    loop->transfer_complete = 1U;
-    return UPDATE_STATUS_OK;
-}
-
-static update_status_t handle_validate(boot_update_loop_t *loop)
-{
-    app_image_result_t image_result;
-    const uint8_t *target_base = boot_flash_slot_base(loop->target_slot);
-    const uint32_t *vectors = (const uint32_t *)target_base;
-    uint32_t slot_start = loop->target_slot == BOOT_SLOT_A
-                              ? APP_SLOT_A_START_ADDR
-                              : APP_SLOT_B_START_ADDR;
-    uint32_t slot_end = loop->target_slot == BOOT_SLOT_A
-                            ? APP_SLOT_A_END_ADDR
-                            : APP_SLOT_B_END_ADDR;
-
-    if ((loop->session_active == 0U) || (loop->transfer_complete == 0U)) {
-        return UPDATE_STATUS_BAD_STATE;
-    }
-
-    if (target_base == 0) {
-        return UPDATE_STATUS_BAD_STATE;
-    }
-
-    image_result = app_image_validate(target_base, APP_SLOT_SIZE);
-    if ((image_result.status != APP_IMAGE_VALID) ||
-        (image_result.image_size != loop->expected_image_size) ||
-        (image_result.expected_crc32 != loop->expected_image_crc32)) {
-        return UPDATE_STATUS_BAD_IMAGE;
-    }
-
-    if (!app_vectors_are_valid_for_slot(vectors[0], vectors[1],
-                                        slot_start, slot_end)) {
-        return UPDATE_STATUS_BAD_IMAGE;
-    }
-
-    loop->candidate_version = image_result.version;
-    loop->candidate_crc32 = image_result.expected_crc32;
-    loop->candidate_valid = 1U;
-    return UPDATE_STATUS_OK;
-}
-
-static update_status_t handle_activate(boot_update_loop_t *loop)
-{
-    boot_state_record_t state;
-
-    if (loop->candidate_valid == 0U) {
-        return UPDATE_STATUS_BAD_STATE;
-    }
-
-    boot_state_store_load(&state);
-    boot_policy_mark_slot_pending(&state, loop->target_slot,
-                                  loop->candidate_version,
-                                  loop->candidate_crc32);
-    if (!boot_state_store_save_next(&state)) {
-        return UPDATE_STATUS_FLASH_ERROR;
-    }
-
-    loop->reset_requested = 1U;
-    return UPDATE_STATUS_OK;
-}
-
-static update_status_t handle_packet(boot_update_loop_t *loop,
-                                     const update_packet_t *packet)
-{
-    switch (packet->command) {
-    case UPDATE_CMD_DISCOVER:
-    case UPDATE_CMD_STATUS:
-    case UPDATE_CMD_ENTER_UPDATE:
-        return UPDATE_STATUS_OK;
-    case UPDATE_CMD_BEGIN:
-        return handle_begin(loop, packet);
-    case UPDATE_CMD_BLOCK:
-        return handle_block(loop, packet);
-    case UPDATE_CMD_END:
-        return handle_end(loop);
-    case UPDATE_CMD_VALIDATE:
-        return handle_validate(loop);
-    case UPDATE_CMD_ABORT:
-        loop->session_active = 0U;
-        loop->transfer_complete = 0U;
-        loop->candidate_valid = 0U;
-        loop->expected_image_size = 0U;
-        loop->expected_image_crc32 = 0U;
-        loop->candidate_version = 0U;
-        loop->candidate_crc32 = 0U;
-        loop->received_image_size = 0U;
-        loop->target_slot = BOOT_SLOT_B;
-        return UPDATE_STATUS_OK;
-    case UPDATE_CMD_ACTIVATE:
-        return handle_activate(loop);
-    default:
-        return UPDATE_STATUS_INVALID_ARGUMENT;
     }
 }
 
@@ -227,8 +30,8 @@ void boot_update_loop_init(boot_update_loop_t *loop)
 {
     if (loop != 0) {
         *loop = (boot_update_loop_t){0};
-        loop->target_slot = BOOT_SLOT_B;
         update_stream_init(&loop->stream);
+        boot_update_session_init(&loop->session);
     }
 }
 
@@ -236,30 +39,31 @@ boot_update_poll_result_t boot_update_loop_poll(boot_update_loop_t *loop)
 {
     boot_update_poll_result_t result = {0};
     uint8_t byte;
-    uart_result_t rx_result;
     uint32_t initial_tx_errors;
 
     if (loop == 0) {
         return result;
     }
-
     initial_tx_errors = loop->tx_errors;
 
-    while ((rx_result = uart_receive_byte(&byte)) == UART_RESULT_OK) {
+    for (uint32_t byte_count = 0U;
+         byte_count < BOOT_UPDATE_MAX_BYTES_PER_POLL;
+         byte_count++) {
         update_packet_t packet = {0};
         size_t consumed = 0U;
         update_status_t status;
 
+        if (uart_receive_byte(&byte) != UART_RESULT_OK) {
+            break;
+        }
         result.bytes_received++;
         status = update_stream_feed(&loop->stream, &byte, 1U, &packet,
                                     loop->payload, sizeof(loop->payload),
                                     &consumed);
         (void)consumed;
-
         if (status == UPDATE_STATUS_OK) {
-            update_status_t ack_status = command_is_supported(packet.command)
-                                             ? handle_packet(loop, &packet)
-                                             : UPDATE_STATUS_INVALID_ARGUMENT;
+            update_status_t ack_status =
+                boot_update_session_process(&loop->session, &packet);
             loop->packets_received++;
             result.packets_received++;
             send_ack(loop, packet.command, ack_status, packet.session_id,

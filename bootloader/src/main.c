@@ -58,7 +58,7 @@ static void run_update_loop_forever(boot_update_loop_t *update_loop)
 {
     while (1) {
         (void)boot_update_loop_poll(update_loop);
-        if (update_loop->reset_requested != 0U) {
+        if (update_loop->session.reset_requested != 0U) {
             (void)uart_drain_tx();
             NVIC_SystemReset();
         }

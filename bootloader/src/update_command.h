@@ -1,27 +1,20 @@
 #pragma once
 
 #include "update/update_stream.h"
+#include "update_session.h"
 #include <stdint.h>
 
 #define BOOT_UPDATE_UART_BAUD 115200U
 #define BOOT_UPDATE_PROBE_POLLS 10000U
+#define BOOT_UPDATE_MAX_BYTES_PER_POLL (UPDATE_PROTOCOL_MAX_PACKET_SIZE * 2U)
 
 typedef struct {
     update_stream_t stream;
+    boot_update_session_t session;
     uint8_t payload[UPDATE_PROTOCOL_MAX_PAYLOAD];
-    uint32_t expected_image_size;
-    uint32_t expected_image_crc32;
-    uint32_t target_slot;
-    uint32_t candidate_version;
-    uint32_t candidate_crc32;
-    uint32_t received_image_size;
     uint32_t packets_received;
     uint32_t parse_errors;
     uint32_t tx_errors;
-    uint8_t session_active;
-    uint8_t transfer_complete;
-    uint8_t candidate_valid;
-    uint8_t reset_requested;
 } boot_update_loop_t;
 
 typedef struct {

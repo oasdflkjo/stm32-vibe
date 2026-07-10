@@ -164,6 +164,21 @@ static update_packet_t pop_ack(uint8_t *payload)
     return packet;
 }
 
+static uint32_t poll_until_packets(uint32_t expected_packets)
+{
+    uint32_t packets = 0U;
+
+    for (uint32_t poll = 0U; poll < 16U; poll++) {
+        boot_update_poll_result_t result = boot_update_loop_poll(&loop);
+
+        packets += result.packets_received;
+        if (packets >= expected_packets) {
+            break;
+        }
+    }
+    return packets;
+}
+
 void test_poll_feeds_split_packet_and_sends_ack(void)
 {
     uint8_t encoded[UPDATE_PROTOCOL_MAX_PACKET_SIZE];
@@ -262,12 +277,11 @@ void test_update_session_writes_and_validates_inactive_slot_b(void)
     push_packet(UPDATE_CMD_END, 0U, 0, 0U);
     push_packet(UPDATE_CMD_VALIDATE, 0U, 0, 0U);
 
-    boot_update_poll_result_t result = boot_update_loop_poll(&loop);
-    TEST_ASSERT_EQUAL_UINT32(8U, result.packets_received);
-    TEST_ASSERT_EQUAL_UINT32(sizeof(test_image), loop.received_image_size);
-    TEST_ASSERT_EQUAL_UINT8(1U, loop.transfer_complete);
-    TEST_ASSERT_EQUAL_UINT8(1U, loop.candidate_valid);
-    TEST_ASSERT_EQUAL_UINT32(BOOT_SLOT_B, loop.target_slot);
+    TEST_ASSERT_EQUAL_UINT32(8U, poll_until_packets(8U));
+    TEST_ASSERT_EQUAL_UINT32(sizeof(test_image), loop.session.received_image_size);
+    TEST_ASSERT_EQUAL_UINT8(1U, loop.session.transfer_complete);
+    TEST_ASSERT_EQUAL_UINT8(1U, loop.session.candidate_valid);
+    TEST_ASSERT_EQUAL_UINT32(BOOT_SLOT_B, loop.session.target_slot);
 
     for (uint32_t index = 0U; index < 8U; index++) {
         update_packet_t ack = pop_ack(ack_payload);
@@ -330,7 +344,7 @@ void test_validate_rejects_corrupt_candidate(void)
     push_packet(UPDATE_CMD_END, 0U, 0, 0U);
     push_packet(UPDATE_CMD_VALIDATE, 0U, 0, 0U);
 
-    TEST_ASSERT_EQUAL_UINT32(8U, boot_update_loop_poll(&loop).packets_received);
+    TEST_ASSERT_EQUAL_UINT32(8U, poll_until_packets(8U));
     for (uint32_t index = 0U; index < 7U; index++) {
         update_packet_t ack = pop_ack(ack_payload);
         TEST_ASSERT_EQUAL_UINT8(UPDATE_STATUS_OK, ack.payload[1]);
@@ -338,7 +352,7 @@ void test_validate_rejects_corrupt_candidate(void)
     update_packet_t validate_ack = pop_ack(ack_payload);
     TEST_ASSERT_EQUAL_UINT8(UPDATE_CMD_VALIDATE, validate_ack.payload[0]);
     TEST_ASSERT_EQUAL_UINT8(UPDATE_STATUS_BAD_IMAGE, validate_ack.payload[1]);
-    TEST_ASSERT_EQUAL_UINT8(0U, loop.candidate_valid);
+    TEST_ASSERT_EQUAL_UINT8(0U, loop.session.candidate_valid);
 }
 
 void test_activate_marks_inactive_slot_b_pending_in_boot_state(void)
@@ -363,7 +377,7 @@ void test_activate_marks_inactive_slot_b_pending_in_boot_state(void)
     push_packet(UPDATE_CMD_VALIDATE, 0U, 0, 0U);
     push_packet(UPDATE_CMD_ACTIVATE, 0U, 0, 0U);
 
-    TEST_ASSERT_EQUAL_UINT32(9U, boot_update_loop_poll(&loop).packets_received);
+    TEST_ASSERT_EQUAL_UINT32(9U, poll_until_packets(9U));
     for (uint32_t index = 0U; index < 9U; index++) {
         update_packet_t ack = pop_ack(ack_payload);
         TEST_ASSERT_EQUAL_UINT8(UPDATE_STATUS_OK, ack.payload[1]);
@@ -399,7 +413,7 @@ void test_first_update_targets_slot_a_when_no_app_is_confirmed(void)
     push_packet(UPDATE_CMD_VALIDATE, 0U, 0, 0U);
     push_packet(UPDATE_CMD_ACTIVATE, 0U, 0, 0U);
 
-    TEST_ASSERT_EQUAL_UINT32(9U, boot_update_loop_poll(&loop).packets_received);
+    TEST_ASSERT_EQUAL_UINT32(9U, poll_until_packets(9U));
     for (uint32_t index = 0U; index < 9U; index++) {
         update_packet_t ack = pop_ack(ack_payload);
         TEST_ASSERT_EQUAL_UINT8(UPDATE_STATUS_OK, ack.payload[1]);
@@ -407,7 +421,7 @@ void test_first_update_targets_slot_a_when_no_app_is_confirmed(void)
 
     const boot_state_record_t *saved = boot_state_store_mock_state();
     TEST_ASSERT_NOT_NULL(saved);
-    TEST_ASSERT_EQUAL_UINT32(BOOT_SLOT_A, loop.target_slot);
+    TEST_ASSERT_EQUAL_UINT32(BOOT_SLOT_A, loop.session.target_slot);
     TEST_ASSERT_EQUAL_UINT32(BOOT_SLOT_A, saved->pending_slot);
     TEST_ASSERT_EQUAL_UINT32(BOOT_SLOT_STATUS_PENDING, saved->slot_a_status);
     TEST_ASSERT_EQUAL_UINT32(BOOT_SLOT_STATUS_EMPTY, saved->slot_b_status);
@@ -442,7 +456,7 @@ void test_update_session_targets_slot_a_when_slot_b_is_active(void)
     push_packet(UPDATE_CMD_VALIDATE, 0U, 0, 0U);
     push_packet(UPDATE_CMD_ACTIVATE, 0U, 0, 0U);
 
-    TEST_ASSERT_EQUAL_UINT32(9U, boot_update_loop_poll(&loop).packets_received);
+    TEST_ASSERT_EQUAL_UINT32(9U, poll_until_packets(9U));
     for (uint32_t index = 0U; index < 9U; index++) {
         update_packet_t ack = pop_ack(ack_payload);
         TEST_ASSERT_EQUAL_UINT8(UPDATE_STATUS_OK, ack.payload[1]);
@@ -450,7 +464,7 @@ void test_update_session_targets_slot_a_when_slot_b_is_active(void)
 
     const boot_state_record_t *saved = boot_state_store_mock_state();
     TEST_ASSERT_NOT_NULL(saved);
-    TEST_ASSERT_EQUAL_UINT32(BOOT_SLOT_A, loop.target_slot);
+    TEST_ASSERT_EQUAL_UINT32(BOOT_SLOT_A, loop.session.target_slot);
     TEST_ASSERT_EQUAL_UINT32(BOOT_SLOT_A, saved->pending_slot);
     TEST_ASSERT_EQUAL_UINT32(BOOT_SLOT_STATUS_PENDING, saved->slot_a_status);
     TEST_ASSERT_EQUAL_UINT32(BOOT_SLOT_STATUS_CONFIRMED, saved->slot_b_status);

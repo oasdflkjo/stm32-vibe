@@ -33,6 +33,29 @@ NUCLEO-L152RE UART workflow working and tested.
 The existing `can.h`, mock, and tests may remain placeholders. Avoid expanding
 them merely to simulate hardware we cannot validate.
 
+## Embedded C Engineering Rules
+
+Use the NASA “Power of Ten” guidance in `nasa.md` as risk-driven engineering
+guidance, accounting for this platform's scope and testability needs:
+
+- Keep per-poll and per-command work statically bounded. Treat reaching an
+  artificial processing bound as an observable condition where it matters.
+- Permit intentional infinite loops only for top-level firmware service/failure
+  loops; inner processing must yield or terminate.
+- Do not use heap allocation in target firmware.
+- Keep functions and modules small enough to review as one coherent unit.
+- Validate public-function parameters and all untrusted protocol/image data.
+- Check fallible return values or explicitly document why they are ignored.
+- Keep state and helper functions at the narrowest useful scope.
+- Keep preprocessing simple and minimize build variants.
+- Avoid pointer complexity. Use function pointers only at narrow, immutable
+  testability/port boundaries where they reduce coupling.
+- Compile with warnings as errors and add static analysis to CI incrementally.
+
+These rules do not require replacing clear bounded code with less maintainable
+simulations merely to satisfy a mechanical metric. Deviations should be small,
+intentional, and reviewable.
+
 ## Target Developer Experience
 
 Creating an application should require only:
@@ -196,51 +219,41 @@ Acceptance criteria:
 
 ## Phase 4 — Separate Update Protocol, Session, and Transport
 
-Goal: retain UART today while allowing a future CAN transport adapter to reuse
-the complete update state machine.
+Goal: retain UART today while allowing future CAN glue to replace it at build
+time and reuse the complete update state machine. UART and CAN are not required
+to operate simultaneously, so no runtime-polymorphic transport interface is
+needed.
 
 Create three distinct responsibilities:
 
 1. **Protocol codec** — encodes and decodes logical update packets.
 2. **Update session engine** — processes commands and owns transfer state,
    sequence rules, image validation, activation, and status responses.
-3. **Transport adapter** — delivers complete logical packets and sends complete
-   responses.
+3. **Transport-specific glue** — converts UART bytes, or later CAN frames, into
+   complete logical packets and sends complete responses. Only one transport is
+   selected into a firmware build.
 
 Tasks:
 
-- [ ] Extract command handling from `bootloader/src/update_command.c` into a
+- [x] Extract command handling from `bootloader/src/update_command.c` into a
       transport-independent session engine.
-- [ ] Define a narrow transport interface, conceptually:
-
-  ```c
-  typedef struct {
-      update_transport_result_t (*receive)(update_packet_buffer_t *packet);
-      update_transport_result_t (*send)(const update_packet_buffer_t *packet);
-      void (*poll)(void);
-  } update_transport_t;
-  ```
-
-  Finalize ownership, lifetime, and buffer rules before implementing it. Avoid
-  making the core session engine aware of UART bytes or CAN frames.
-
-- [ ] Keep `update_stream_t` exclusively in the UART transport adapter; it is a
+- [x] Keep `update_stream_t` exclusively in the UART-facing loop; it is a
       byte-stream framing concern.
-- [ ] Make the bootloader loop poll a configured transport and pass decoded
-      packets to the session engine.
-- [ ] Apply the same boundary to the application update agent: it handles
-      update intent but does not know UART framing.
-- [ ] Store the session ID accepted by `BEGIN` and reject later commands from a
+- [x] Make the UART bootloader loop pass decoded packets to the independent
+      session engine. Replace this glue at build time when CAN is implemented.
+- [ ] When CAN arrives, replace the application UART update agent with CAN
+      update-intent glue; do not add simultaneous transports unless a product
+      requirement appears.
+- [x] Store the session ID accepted by `BEGIN` and reject later commands from a
       different session.
-- [ ] Define duplicate-block behavior. Either safely accept identical retries
-      or explicitly reject them; test the selected policy.
+- [x] Accept retries of already-written blocks only when their bytes match
+      flash; reject changed or partially overlapping duplicates.
 - [ ] Define session timeout, abort, and restart behavior.
 - [ ] Make status/discovery responses carry useful structured data rather than
       only a two-byte ACK.
 - [ ] Ensure no transport can invoke confirmation as a substitute for
       application health.
-- [ ] Add session-engine tests that use a fake packet transport, with no UART
-      dependency.
+- [x] Add direct session-engine tests with no UART dependency.
 - [ ] Retain separate UART-stream tests for resynchronization, partial packets,
       and corrupt frames.
 
@@ -249,15 +262,14 @@ Acceptance criteria:
 - The update session engine has no includes or symbols containing `uart` or
   `can`.
 - UART update behavior and tooling remain functional.
-- A test-only second packet transport can drive the same update session without
-  changing session-engine code.
-- A future CAN implementation needs only packet fragmentation/reassembly and a
-  transport adapter.
+- Session behavior is covered directly without transport mocks.
+- A future CAN implementation replaces UART glue at build time and needs only
+  CAN packet fragmentation/reassembly plus calls into the existing session.
 
 ### Important CAN boundary for later
 
 Do not attempt to put a 148-byte protocol packet directly into an 8-byte
-classic CAN frame. The future CAN adapter will need its own fragmentation,
+classic CAN frame. The future CAN glue will need its own fragmentation,
 reassembly, addressing, timeout, duplicate, and flow-control rules. Those rules
 belong below the logical update packet/session engine and should be designed
 when the actual board and intended network behavior can be tested.
