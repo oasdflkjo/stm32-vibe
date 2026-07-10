@@ -75,9 +75,10 @@ added.
 | App slot B     | `0x08048000` | 220 KB |
 | Reserved flash | `0x0807F000` | 4 KB   |
 
-The bootloader validates the app manifest, CRC, stack pointer, and reset vector
-in slot A at `0x08011000` before jumping to it. Slot B and boot-state storage
-are reserved for the CAN firmware update flow.
+The bootloader validates the selected app slot manifest, CRC, stack pointer, and
+reset vector before jumping to it. If no boot-state record exists, both slots are
+treated as empty and the bootloader stays in update mode until the first image
+is downloaded.
 
 ## Developer Workflow
 
@@ -133,15 +134,16 @@ make combined-slots
 ```
 
 Build and flash it in one step. This uses the faster segmented binary flash path
-instead of writing the padded combined image, clears the boot-state page back to
-the default slot-A state, and resets the target after flashing:
+instead of writing the padded combined image, writes a confirmed slot-A boot-state
+record, and resets the target after flashing:
 
 ```sh
 make flash-combined-slots
 ```
 
 The generated `build/combined-slots.bin` can also be flashed as a single file,
-but it includes padding between slot A and slot B:
+but it includes padding between slot A and slot B and does not install a
+boot-state record:
 
 ```sh
 st-flash --reset write build/combined-slots.bin 0x08000000
@@ -162,6 +164,10 @@ If slot B is the active/running slot, build and send the slot-A artifact instead
 (`make -C apps/vibe firmware`, then `apps/vibe/build/vibe.bin` and
 `apps/vibe/build/vibe.json`).
 
+For a board that only has the bootloader flashed, the first update targets slot
+A. Use the slot-A artifact (`apps/vibe/build/vibe.bin` and
+`apps/vibe/build/vibe.json`) for that provisioning update.
+
 Install `pyserial` on the host if the `serial` module is missing:
 
 ```sh
@@ -175,12 +181,12 @@ line logs or `--tui` to force the terminal UI.
 The running app listens for an `ENTER_UPDATE` packet, ACKs it, and requests a
 system reset. The updater then waits for the bootloader `DISCOVER` ACK before
 streaming the candidate image. At `BEGIN`, the bootloader chooses the inactive
-slot from boot state: slot B when slot A is active, or slot A when slot B is
-active. The host binary must be linked for that target slot. UART packets are
-paced by default for the current polling receiver (`--byte-delay`,
-`--app-reset-byte-delay`). After `ACTIVATE`, the bootloader ACKs the command,
-records the target slot as pending, drains UART TX, and requests a device reset;
-no manual reset is required for the update handoff.
+slot from boot state: slot B when slot A is active, slot A when slot B is active,
+or slot A when no app has been confirmed yet. The host binary must be linked for
+that target slot. UART packets are paced by default for the current polling
+receiver (`--byte-delay`, `--app-reset-byte-delay`). After `ACTIVATE`, the
+bootloader ACKs the command, records the target slot as pending, drains UART TX,
+and requests a device reset; no manual reset is required for the update handoff.
 
 Run unit tests (host `gcc`, no cross-compilation needed):
 
@@ -234,12 +240,21 @@ examples of task, trace, and diagnostic tests.
 
 ## Flashing
 
-For firmware-update testing, flash bootloader, erased boot state, slot A, and
-slot B in one shot (requires `st-flash` on host):
+For firmware-update testing, flash bootloader, confirmed slot-A boot state, slot
+A, and slot B in one shot (requires `st-flash` on host):
 
 ```sh
 make flash-combined-slots
 ```
+
+To test first provisioning, mass-erase the target and flash only the bootloader:
+
+```sh
+make flash-bootloader-only
+```
+
+The bootloader will stay in update mode because both app slots and boot-state
+records are absent.
 
 The older combined target flashes only the bootloader and slot-A app:
 

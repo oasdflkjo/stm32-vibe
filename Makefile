@@ -16,7 +16,7 @@ COMBINED_SLOTS_BIN := $(COMBINED_DIR)/combined-slots.bin
 
 ALL_PROJECTS := bootloader $(APP_DIR)
 
-.PHONY: all _firmware _combined clean test combined-slots flash-combined-slots flash flash-swo flash-fault-test flash-watchdog-test flash-bootloader flash-app firmware-slot-b flash-app-slot-b container-build container-shell $(ALL_PROJECTS)
+.PHONY: all _firmware _combined clean test combined-slots flash-combined-slots flash flash-swo flash-fault-test flash-watchdog-test flash-bootloader flash-bootloader-only flash-app firmware-slot-b flash-app-slot-b container-build container-shell $(ALL_PROJECTS)
 
 # ── Developer entry points (run everything inside the container) ──────────────
 all: container-build
@@ -54,6 +54,10 @@ flash-combined-slots:
 		--flash
 
 flash-bootloader: bootloader/build/bootloader.bin
+	st-flash --reset write bootloader/build/bootloader.bin $(BOOTLOADER_FLASH_ADDR)
+
+flash-bootloader-only: bootloader/build/bootloader.bin
+	st-flash erase
 	st-flash --reset write bootloader/build/bootloader.bin $(BOOTLOADER_FLASH_ADDR)
 
 flash-app:

@@ -14,12 +14,12 @@ void tearDown(void)
 {
 }
 
-void test_default_state_is_valid_confirmed_slot_a(void)
+void test_default_state_is_valid_empty_slot_a_provisioning_state(void)
 {
     TEST_ASSERT_EQUAL(BOOT_STATE_VALID, boot_state_validate(&state_a));
     TEST_ASSERT_EQUAL_UINT32(BOOT_SLOT_A, state_a.active_slot);
     TEST_ASSERT_EQUAL_UINT32(BOOT_STATE_NO_SLOT, state_a.pending_slot);
-    TEST_ASSERT_EQUAL_UINT32(BOOT_SLOT_STATUS_CONFIRMED,
+    TEST_ASSERT_EQUAL_UINT32(BOOT_SLOT_STATUS_EMPTY,
                              boot_state_status_for_slot(&state_a, BOOT_SLOT_A));
     TEST_ASSERT_EQUAL_UINT32(BOOT_SLOT_STATUS_EMPTY,
                              boot_state_status_for_slot(&state_a, BOOT_SLOT_B));
@@ -89,7 +89,7 @@ void test_rejects_when_no_valid_copy_exists(void)
 int main(void)
 {
     UNITY_BEGIN();
-    RUN_TEST(test_default_state_is_valid_confirmed_slot_a);
+    RUN_TEST(test_default_state_is_valid_empty_slot_a_provisioning_state);
     RUN_TEST(test_rejects_bad_crc);
     RUN_TEST(test_rejects_invalid_pending_attempt_count);
     RUN_TEST(test_updates_crc_after_state_change);

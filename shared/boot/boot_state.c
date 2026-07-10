@@ -43,7 +43,7 @@ void boot_state_init_default(boot_state_record_t *state)
         .active_slot = BOOT_SLOT_A,
         .pending_slot = BOOT_STATE_NO_SLOT,
         .pending_attempts = 0U,
-        .slot_a_status = BOOT_SLOT_STATUS_CONFIRMED,
+        .slot_a_status = BOOT_SLOT_STATUS_EMPTY,
         .slot_b_status = BOOT_SLOT_STATUS_EMPTY,
     };
     boot_state_update_crc(state);

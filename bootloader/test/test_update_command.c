@@ -57,6 +57,16 @@ static void write_u32_le(uint8_t *bytes, uint32_t value)
     bytes[3] = (uint8_t)(value >> 24U);
 }
 
+static void set_confirmed_slot_a(void)
+{
+    boot_state_record_t state;
+
+    boot_state_init_default(&state);
+    state.slot_a_status = BOOT_SLOT_STATUS_CONFIRMED;
+    boot_state_update_crc(&state);
+    boot_state_store_mock_set_state(&state);
+}
+
 static uint32_t slot_start(uint32_t slot)
 {
     return slot == BOOT_SLOT_A ? APP_SLOT_A_START_ADDR : APP_SLOT_B_START_ADDR;
@@ -220,6 +230,7 @@ void test_update_session_writes_and_validates_inactive_slot_b(void)
     uint8_t begin_payload[8];
     uint8_t ack_payload[UPDATE_PROTOCOL_MAX_PAYLOAD];
 
+    set_confirmed_slot_a();
     prepare_valid_image(BOOT_SLOT_B);
     write_u32_le(&begin_payload[0], sizeof(test_image));
     write_u32_le(&begin_payload[4],
@@ -290,6 +301,7 @@ void test_validate_rejects_corrupt_candidate(void)
     uint8_t begin_payload[8];
     uint8_t ack_payload[UPDATE_PROTOCOL_MAX_PAYLOAD];
 
+    set_confirmed_slot_a();
     prepare_valid_image(BOOT_SLOT_B);
     write_u32_le(&begin_payload[0], sizeof(test_image));
     write_u32_le(&begin_payload[4], 0xDEADBEEFU);
@@ -319,6 +331,7 @@ void test_activate_marks_inactive_slot_b_pending_in_boot_state(void)
     uint8_t begin_payload[8];
     uint8_t ack_payload[UPDATE_PROTOCOL_MAX_PAYLOAD];
 
+    set_confirmed_slot_a();
     prepare_valid_image(BOOT_SLOT_B);
     write_u32_le(&begin_payload[0], sizeof(test_image));
     write_u32_le(&begin_payload[4],
@@ -348,6 +361,41 @@ void test_activate_marks_inactive_slot_b_pending_in_boot_state(void)
     TEST_ASSERT_EQUAL_UINT32(0U, saved->confirmed_version);
     TEST_ASSERT_EQUAL_UINT32(9U,
                              saved->reserved[BOOT_STATE_PENDING_VERSION_WORD]);
+}
+
+void test_first_update_targets_slot_a_when_no_app_is_confirmed(void)
+{
+    uint8_t begin_payload[8];
+    uint8_t ack_payload[UPDATE_PROTOCOL_MAX_PAYLOAD];
+
+    prepare_valid_image(BOOT_SLOT_A);
+    write_u32_le(&begin_payload[0], sizeof(test_image));
+    write_u32_le(&begin_payload[4],
+                 ((app_manifest_t *)(test_image + APP_MANIFEST_OFFSET))
+                     ->image_crc32);
+    push_packet(UPDATE_CMD_BEGIN, 0U, begin_payload, sizeof(begin_payload));
+    push_packet(UPDATE_CMD_BLOCK, 0U, test_image, 128U);
+    push_packet(UPDATE_CMD_BLOCK, 128U, &test_image[128], 128U);
+    push_packet(UPDATE_CMD_BLOCK, 256U, &test_image[256], 128U);
+    push_packet(UPDATE_CMD_BLOCK, 384U, &test_image[384], 128U);
+    push_packet(UPDATE_CMD_BLOCK, 512U, &test_image[512],
+                sizeof(test_image) - 512U);
+    push_packet(UPDATE_CMD_END, 0U, 0, 0U);
+    push_packet(UPDATE_CMD_VALIDATE, 0U, 0, 0U);
+    push_packet(UPDATE_CMD_ACTIVATE, 0U, 0, 0U);
+
+    TEST_ASSERT_EQUAL_UINT32(9U, boot_update_loop_poll(&loop).packets_received);
+    for (uint32_t index = 0U; index < 9U; index++) {
+        update_packet_t ack = pop_ack(ack_payload);
+        TEST_ASSERT_EQUAL_UINT8(UPDATE_STATUS_OK, ack.payload[1]);
+    }
+
+    const boot_state_record_t *saved = boot_state_store_mock_state();
+    TEST_ASSERT_NOT_NULL(saved);
+    TEST_ASSERT_EQUAL_UINT32(BOOT_SLOT_A, loop.target_slot);
+    TEST_ASSERT_EQUAL_UINT32(BOOT_SLOT_A, saved->pending_slot);
+    TEST_ASSERT_EQUAL_UINT32(BOOT_SLOT_STATUS_PENDING, saved->slot_a_status);
+    TEST_ASSERT_EQUAL_UINT32(BOOT_SLOT_STATUS_EMPTY, saved->slot_b_status);
 }
 
 void test_update_session_targets_slot_a_when_slot_b_is_active(void)
@@ -404,6 +452,7 @@ int main(void)
     RUN_TEST(test_out_of_order_block_returns_bad_sequence);
     RUN_TEST(test_validate_rejects_corrupt_candidate);
     RUN_TEST(test_activate_marks_inactive_slot_b_pending_in_boot_state);
+    RUN_TEST(test_first_update_targets_slot_a_when_no_app_is_confirmed);
     RUN_TEST(test_update_session_targets_slot_a_when_slot_b_is_active);
     return UNITY_END();
 }

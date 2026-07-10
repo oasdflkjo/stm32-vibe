@@ -50,10 +50,12 @@ The branch is ready to continue from a clean protocol foundation:
 - `bootloader/src/boot_flash_stm32l1.c` provides direct STM32L1 slot
   erase/program support behind a testable `boot_flash` boundary.
 - `bootloader/src/boot_state_store_stm32l1.c` reads and writes two boot-state
-  record copies in the reserved boot-state flash region.
-- `bootloader/src/boot_policy.c` selects confirmed or pending slots, increments
-  pending boot attempts before boot, marks failed pending slots bad, and
-  promotes pending metadata to confirmed metadata on confirm.
+  record copies in the reserved boot-state flash region. If no valid record is
+  present, the bootloader treats both slots as empty for first provisioning.
+- `bootloader/src/boot_policy.c` selects confirmed or pending slots, targets slot
+  A for first provisioning when no app is confirmed, increments pending boot
+  attempts before boot, marks failed pending slots bad, and promotes pending
+  metadata to confirmed metadata on confirm.
 - `ACTIVATE` now persists the selected inactive slot as pending after candidate
   validation.
 - `apps/vibe/test/test_update_protocol.c` and

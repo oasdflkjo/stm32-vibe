@@ -126,12 +126,12 @@ printf 'Fast flash with: %s --output %s --bin-output %s --flash-addr %s --boot-s
 printf 'Single-file binary flash: st-flash --reset write %s %s\n' "$bin_output" "$flash_addr"
 
 if [ "$flash" -ne 0 ]; then
-  boot_state_erased="$(dirname "$bin_output")/boot-state-erased.bin"
+  boot_state_confirmed_a="$(dirname "$bin_output")/boot-state-confirmed-a.bin"
   printf 'Flashing bootloader...\n'
   st-flash write bootloader/build/bootloader.bin "$flash_addr"
-  printf 'Erasing boot state...\n'
-  python3 -c 'import sys; open(sys.argv[1], "wb").write(b"\xff" * int(sys.argv[2], 0))' "$boot_state_erased" "$boot_state_size"
-  st-flash write "$boot_state_erased" "$boot_state_addr"
+  printf 'Flashing confirmed slot-A boot state...\n'
+  python3 tools/boot_state_image.py --mode confirmed-a --size "$boot_state_size" --output "$boot_state_confirmed_a"
+  st-flash write "$boot_state_confirmed_a" "$boot_state_addr"
   printf 'Flashing %s slot A...\n' "$app"
   st-flash write "$app_dir/build/${app}.bin" "$slot_a_addr"
   printf 'Flashing %s slot B...\n' "$app"

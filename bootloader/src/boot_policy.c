@@ -28,6 +28,12 @@ static void set_status_for_slot(boot_state_record_t *state,
     }
 }
 
+static int slot_status_is_runnable(uint32_t status)
+{
+    return (status == BOOT_SLOT_STATUS_VALID) ||
+           (status == BOOT_SLOT_STATUS_CONFIRMED);
+}
+
 boot_candidate_t boot_policy_select_candidate(boot_state_record_t *state)
 {
     uint32_t slot = state->active_slot;
@@ -60,8 +66,11 @@ uint32_t boot_policy_inactive_slot(const boot_state_record_t *state)
         if ((state->pending_slot == BOOT_SLOT_A) ||
             (state->pending_slot == BOOT_SLOT_B)) {
             running_slot = state->pending_slot;
-        } else {
+        } else if (slot_status_is_runnable(status_for_slot(state,
+                                                           state->active_slot))) {
             running_slot = state->active_slot;
+        } else {
+            return state->active_slot;
         }
     }
 

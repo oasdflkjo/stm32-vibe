@@ -162,7 +162,7 @@ test: $(TEST_LED_BIN) $(TEST_TRACE_BIN) $(TEST_FAULT_BIN) $(TEST_WATCHDOG_BIN) $
 	./$(TEST_UPDATE_PROTOCOL_BIN)
 	./$(TEST_UPDATE_STREAM_BIN)
 	./$(TEST_UPDATE_AGENT_BIN)
-	cd $(REPO_ROOT) && $(PYTHON) -m unittest tools.test_trace_tools tools.test_finalize_image tools.test_uart_update
+	cd $(REPO_ROOT) && $(PYTHON) -m unittest tools.test_trace_tools tools.test_finalize_image tools.test_uart_update tools.test_boot_state_image
 
 $(TEST_LED_BIN): $(TEST_LED_SRCS) | $(TEST_DIR)
 	gcc $(TEST_CFLAGS) $^ -o $@
