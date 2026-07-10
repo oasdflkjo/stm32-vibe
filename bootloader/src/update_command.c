@@ -60,8 +60,10 @@ static void send_ack(boot_update_loop_t *loop,
 static update_status_t handle_begin(boot_update_loop_t *loop,
                                     const update_packet_t *packet)
 {
+    boot_state_record_t state;
     uint32_t image_size;
     uint32_t image_crc32;
+    uint32_t target_slot;
 
     if (packet->payload_len != 8U) {
         return UPDATE_STATUS_BAD_LENGTH;
@@ -73,12 +75,16 @@ static update_status_t handle_begin(boot_update_loop_t *loop,
         return UPDATE_STATUS_BAD_LENGTH;
     }
 
-    if (boot_flash_erase_slot_b(image_size) != BOOT_FLASH_OK) {
+    boot_state_store_load(&state);
+    target_slot = boot_policy_inactive_slot(&state);
+
+    if (boot_flash_erase_slot(target_slot, image_size) != BOOT_FLASH_OK) {
         return UPDATE_STATUS_FLASH_ERROR;
     }
 
     loop->expected_image_size = image_size;
     loop->expected_image_crc32 = image_crc32;
+    loop->target_slot = target_slot;
     loop->received_image_size = 0U;
     loop->candidate_version = 0U;
     loop->candidate_crc32 = 0U;
@@ -102,8 +108,9 @@ static update_status_t handle_block(boot_update_loop_t *loop,
         return UPDATE_STATUS_BAD_SEQUENCE;
     }
 
-    if (boot_flash_write_slot_b(packet->sequence, packet->payload,
-                                packet->payload_len) != BOOT_FLASH_OK) {
+    if (boot_flash_write_slot(loop->target_slot, packet->sequence,
+                              packet->payload,
+                              packet->payload_len) != BOOT_FLASH_OK) {
         return UPDATE_STATUS_FLASH_ERROR;
     }
 
@@ -128,13 +135,24 @@ static update_status_t handle_end(boot_update_loop_t *loop)
 static update_status_t handle_validate(boot_update_loop_t *loop)
 {
     app_image_result_t image_result;
-    const uint32_t *vectors = (const uint32_t *)boot_flash_slot_b_base();
+    const uint8_t *target_base = boot_flash_slot_base(loop->target_slot);
+    const uint32_t *vectors = (const uint32_t *)target_base;
+    uint32_t slot_start = loop->target_slot == BOOT_SLOT_A
+                              ? APP_SLOT_A_START_ADDR
+                              : APP_SLOT_B_START_ADDR;
+    uint32_t slot_end = loop->target_slot == BOOT_SLOT_A
+                            ? APP_SLOT_A_END_ADDR
+                            : APP_SLOT_B_END_ADDR;
 
     if ((loop->session_active == 0U) || (loop->transfer_complete == 0U)) {
         return UPDATE_STATUS_BAD_STATE;
     }
 
-    image_result = app_image_validate(boot_flash_slot_b_base(), APP_SLOT_SIZE);
+    if (target_base == 0) {
+        return UPDATE_STATUS_BAD_STATE;
+    }
+
+    image_result = app_image_validate(target_base, APP_SLOT_SIZE);
     if ((image_result.status != APP_IMAGE_VALID) ||
         (image_result.image_size != loop->expected_image_size) ||
         (image_result.expected_crc32 != loop->expected_image_crc32)) {
@@ -142,8 +160,7 @@ static update_status_t handle_validate(boot_update_loop_t *loop)
     }
 
     if (!app_vectors_are_valid_for_slot(vectors[0], vectors[1],
-                                        APP_SLOT_B_START_ADDR,
-                                        APP_SLOT_B_END_ADDR)) {
+                                        slot_start, slot_end)) {
         return UPDATE_STATUS_BAD_IMAGE;
     }
 
@@ -162,8 +179,9 @@ static update_status_t handle_activate(boot_update_loop_t *loop)
     }
 
     boot_state_store_load(&state);
-    boot_policy_mark_slot_b_pending(&state, loop->candidate_version,
-                                    loop->candidate_crc32);
+    boot_policy_mark_slot_pending(&state, loop->target_slot,
+                                  loop->candidate_version,
+                                  loop->candidate_crc32);
     if (!boot_state_store_save_next(&state)) {
         return UPDATE_STATUS_FLASH_ERROR;
     }
@@ -210,6 +228,7 @@ static update_status_t handle_packet(boot_update_loop_t *loop,
         loop->candidate_version = 0U;
         loop->candidate_crc32 = 0U;
         loop->received_image_size = 0U;
+        loop->target_slot = BOOT_SLOT_B;
         return UPDATE_STATUS_OK;
     case UPDATE_CMD_ACTIVATE:
         return handle_activate(loop);
@@ -224,6 +243,7 @@ void boot_update_loop_init(boot_update_loop_t *loop)
 {
     if (loop != 0) {
         *loop = (boot_update_loop_t){0};
+        loop->target_slot = BOOT_SLOT_B;
         update_stream_init(&loop->stream);
     }
 }

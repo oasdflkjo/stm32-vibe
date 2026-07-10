@@ -115,7 +115,9 @@ make BOARD=nucleo-l152re
 
 `BOARD=nucleo-f446re` is reserved for the CAN-capable NUCLEO-F446RE port.
 
-Build a slot-B-linked app image for update testing:
+Build a slot-B-linked app image for update testing. After
+`make flash-combined-slots`, the boot state defaults to slot A active, so the
+first UART update normally targets slot B:
 
 ```sh
 make firmware-slot-b
@@ -145,7 +147,7 @@ but it includes padding between slot A and slot B:
 st-flash --reset write build/combined-slots.bin 0x08000000
 ```
 
-Send a slot-B image over the bootloader UART update path:
+Send an image linked for the inactive slot over the bootloader UART update path:
 
 ```sh
 python3 tools/uart_update.py \
@@ -155,6 +157,10 @@ python3 tools/uart_update.py \
   --app-name vibe \
   --board-name "ST NUCLEO-L152RE"
 ```
+
+If slot B is the active/running slot, build and send the slot-A artifact instead
+(`make -C apps/vibe firmware`, then `apps/vibe/build/vibe.bin` and
+`apps/vibe/build/vibe.json`).
 
 Install `pyserial` on the host if the `serial` module is missing:
 
@@ -168,10 +174,13 @@ line logs or `--tui` to force the terminal UI.
 
 The running app listens for an `ENTER_UPDATE` packet, ACKs it, and requests a
 system reset. The updater then waits for the bootloader `DISCOVER` ACK before
-streaming the slot-B image. UART packets are paced by default for the current
-polling receiver (`--byte-delay`, `--app-reset-byte-delay`). After `ACTIVATE`,
-the bootloader ACKs the command, records slot B as pending, drains UART TX, and
-requests a device reset; no manual reset is required for the update handoff.
+streaming the candidate image. At `BEGIN`, the bootloader chooses the inactive
+slot from boot state: slot B when slot A is active, or slot A when slot B is
+active. The host binary must be linked for that target slot. UART packets are
+paced by default for the current polling receiver (`--byte-delay`,
+`--app-reset-byte-delay`). After `ACTIVATE`, the bootloader ACKs the command,
+records the target slot as pending, drains UART TX, and requests a device reset;
+no manual reset is required for the update handoff.
 
 Run unit tests (host `gcc`, no cross-compilation needed):
 

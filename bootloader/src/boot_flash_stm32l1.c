@@ -1,4 +1,5 @@
 #include "boot_flash.h"
+#include "boot/boot_state.h"
 #include "image/flash_layout.h"
 #include "stm32l1xx.h"
 
@@ -56,6 +57,16 @@ static void lock_flash(void)
     FLASH->PECR |= FLASH_PECR_PRGLOCK;
 }
 
+static uint32_t slot_base(uint32_t slot)
+{
+    return slot == BOOT_SLOT_A ? APP_SLOT_A_START_ADDR : APP_SLOT_B_START_ADDR;
+}
+
+static int slot_is_valid(uint32_t slot)
+{
+    return (slot == BOOT_SLOT_A) || (slot == BOOT_SLOT_B);
+}
+
 static boot_flash_result_t erase_page(uint32_t address)
 {
     volatile uint32_t *page = (volatile uint32_t *)address;
@@ -74,9 +85,13 @@ static boot_flash_result_t erase_page(uint32_t address)
     return BOOT_FLASH_OK;
 }
 
-boot_flash_result_t boot_flash_erase_slot_b(uint32_t image_size)
+boot_flash_result_t boot_flash_erase_slot(uint32_t slot, uint32_t image_size)
 {
     uint32_t erase_size;
+
+    if (!slot_is_valid(slot)) {
+        return BOOT_FLASH_INVALID_ARGUMENT;
+    }
 
     if ((image_size == 0U) || (image_size > APP_SLOT_SIZE)) {
         return BOOT_FLASH_INVALID_ARGUMENT;
@@ -90,7 +105,7 @@ boot_flash_result_t boot_flash_erase_slot_b(uint32_t image_size)
                  ~(BOOT_FLASH_PAGE_SIZE - 1U);
     for (uint32_t offset = 0U; offset < erase_size;
          offset += BOOT_FLASH_PAGE_SIZE) {
-        if (erase_page(APP_SLOT_B_START_ADDR + offset) != BOOT_FLASH_OK) {
+        if (erase_page(slot_base(slot) + offset) != BOOT_FLASH_OK) {
             lock_flash();
             return BOOT_FLASH_ERROR;
         }
@@ -100,11 +115,16 @@ boot_flash_result_t boot_flash_erase_slot_b(uint32_t image_size)
     return BOOT_FLASH_OK;
 }
 
-boot_flash_result_t boot_flash_write_slot_b(uint32_t offset,
-                                            const uint8_t *data,
-                                            size_t len)
+boot_flash_result_t boot_flash_write_slot(uint32_t slot,
+                                          uint32_t offset,
+                                          const uint8_t *data,
+                                          size_t len)
 {
     uint32_t address;
+
+    if (!slot_is_valid(slot)) {
+        return BOOT_FLASH_INVALID_ARGUMENT;
+    }
 
     if (((len != 0U) && (data == 0)) || (offset > APP_SLOT_SIZE) ||
         (len > (APP_SLOT_SIZE - offset))) {
@@ -119,7 +139,7 @@ boot_flash_result_t boot_flash_write_slot_b(uint32_t offset,
         return BOOT_FLASH_ERROR;
     }
 
-    address = APP_SLOT_B_START_ADDR + offset;
+    address = slot_base(slot) + offset;
     for (size_t index = 0U; index < len; index += sizeof(uint32_t)) {
         uint32_t word = UINT32_MAX;
         size_t remaining = len - index;
@@ -145,7 +165,11 @@ boot_flash_result_t boot_flash_write_slot_b(uint32_t offset,
     return BOOT_FLASH_OK;
 }
 
-const uint8_t *boot_flash_slot_b_base(void)
+const uint8_t *boot_flash_slot_base(uint32_t slot)
 {
-    return (const uint8_t *)APP_SLOT_B_START_ADDR;
+    if (!slot_is_valid(slot)) {
+        return 0;
+    }
+
+    return (const uint8_t *)slot_base(slot);
 }

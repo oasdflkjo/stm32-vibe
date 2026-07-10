@@ -9,8 +9,9 @@ typedef enum {
     BOOT_FLASH_ERROR = 2,
 } boot_flash_result_t;
 
-boot_flash_result_t boot_flash_erase_slot_b(uint32_t image_size);
-boot_flash_result_t boot_flash_write_slot_b(uint32_t offset,
-                                            const uint8_t *data,
-                                            size_t len);
-const uint8_t *boot_flash_slot_b_base(void);
+boot_flash_result_t boot_flash_erase_slot(uint32_t slot, uint32_t image_size);
+boot_flash_result_t boot_flash_write_slot(uint32_t slot,
+                                          uint32_t offset,
+                                          const uint8_t *data,
+                                          size_t len);
+const uint8_t *boot_flash_slot_base(uint32_t slot);

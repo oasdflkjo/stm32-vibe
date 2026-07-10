@@ -52,6 +52,22 @@ boot_candidate_t boot_policy_select_candidate(boot_state_record_t *state)
     };
 }
 
+uint32_t boot_policy_inactive_slot(const boot_state_record_t *state)
+{
+    uint32_t running_slot = BOOT_SLOT_A;
+
+    if (state != 0) {
+        if ((state->pending_slot == BOOT_SLOT_A) ||
+            (state->pending_slot == BOOT_SLOT_B)) {
+            running_slot = state->pending_slot;
+        } else {
+            running_slot = state->active_slot;
+        }
+    }
+
+    return running_slot == BOOT_SLOT_B ? BOOT_SLOT_A : BOOT_SLOT_B;
+}
+
 void boot_policy_mark_pending_bad(boot_state_record_t *state)
 {
     if (state->pending_slot != BOOT_STATE_NO_SLOT) {
@@ -63,16 +79,18 @@ void boot_policy_mark_pending_bad(boot_state_record_t *state)
     }
 }
 
-void boot_policy_mark_slot_b_pending(boot_state_record_t *state,
-                                     uint32_t version,
-                                     uint32_t image_crc32)
+void boot_policy_mark_slot_pending(boot_state_record_t *state,
+                                   uint32_t slot,
+                                   uint32_t version,
+                                   uint32_t image_crc32)
 {
-    state->pending_slot = BOOT_SLOT_B;
-    state->pending_attempts = 0U;
-    state->slot_b_status = BOOT_SLOT_STATUS_PENDING;
-    if (state->slot_a_status == BOOT_SLOT_STATUS_CONFIRMED) {
-        state->active_slot = BOOT_SLOT_A;
+    if ((slot != BOOT_SLOT_A) && (slot != BOOT_SLOT_B)) {
+        return;
     }
+
+    state->pending_slot = slot;
+    state->pending_attempts = 0U;
+    set_status_for_slot(state, slot, BOOT_SLOT_STATUS_PENDING);
     state->reserved[BOOT_STATE_PENDING_VERSION_WORD] = version;
     state->reserved[BOOT_STATE_PENDING_CRC32_WORD] = image_crc32;
     state->generation++;

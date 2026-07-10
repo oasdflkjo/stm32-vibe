@@ -487,7 +487,7 @@ def open_serial(device: str, baudrate: int, timeout_s: float) -> BinaryIO:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Send a slot-B firmware image over UART")
+    parser = argparse.ArgumentParser(description="Send an inactive-slot firmware image over UART")
     parser.add_argument("--port", required=True, help="serial device, for example /dev/ttyACM0")
     parser.add_argument("--bin", required=True, type=Path, dest="binary")
     parser.add_argument("--metadata", type=Path, help="image JSON sidecar; defaults to .json next to --bin")

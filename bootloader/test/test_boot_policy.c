@@ -25,7 +25,7 @@ void test_selects_confirmed_active_slot_by_default(void)
 
 void test_selects_pending_slot_and_increments_attempt(void)
 {
-    boot_policy_mark_slot_b_pending(&state, 4U, 0x12345678U);
+    boot_policy_mark_slot_pending(&state, BOOT_SLOT_B, 4U, 0x12345678U);
 
     boot_candidate_t candidate = boot_policy_select_candidate(&state);
 
@@ -40,7 +40,7 @@ void test_selects_pending_slot_and_increments_attempt(void)
 
 void test_exhausted_pending_slot_falls_back_to_active(void)
 {
-    boot_policy_mark_slot_b_pending(&state, 4U, 0x12345678U);
+    boot_policy_mark_slot_pending(&state, BOOT_SLOT_B, 4U, 0x12345678U);
     state.pending_attempts = BOOT_STATE_MAX_PENDING_ATTEMPTS;
     boot_state_update_crc(&state);
 
@@ -52,7 +52,7 @@ void test_exhausted_pending_slot_falls_back_to_active(void)
 
 void test_marks_pending_slot_bad(void)
 {
-    boot_policy_mark_slot_b_pending(&state, 4U, 0x12345678U);
+    boot_policy_mark_slot_pending(&state, BOOT_SLOT_B, 4U, 0x12345678U);
     boot_policy_mark_pending_bad(&state);
 
     TEST_ASSERT_EQUAL_UINT32(BOOT_STATE_NO_SLOT, state.pending_slot);
@@ -62,7 +62,7 @@ void test_marks_pending_slot_bad(void)
 
 void test_confirms_pending_slot(void)
 {
-    boot_policy_mark_slot_b_pending(&state, 4U, 0x12345678U);
+    boot_policy_mark_slot_pending(&state, BOOT_SLOT_B, 4U, 0x12345678U);
     boot_policy_confirm_pending(&state);
 
     TEST_ASSERT_EQUAL_UINT32(BOOT_SLOT_B, state.active_slot);
@@ -74,6 +74,25 @@ void test_confirms_pending_slot(void)
     TEST_ASSERT_EQUAL(BOOT_STATE_VALID, boot_state_validate(&state));
 }
 
+void test_inactive_slot_is_opposite_active_slot(void)
+{
+    TEST_ASSERT_EQUAL_UINT32(BOOT_SLOT_B, boot_policy_inactive_slot(&state));
+
+    state.active_slot = BOOT_SLOT_B;
+    state.slot_a_status = BOOT_SLOT_STATUS_VALID;
+    state.slot_b_status = BOOT_SLOT_STATUS_CONFIRMED;
+    boot_state_update_crc(&state);
+
+    TEST_ASSERT_EQUAL_UINT32(BOOT_SLOT_A, boot_policy_inactive_slot(&state));
+}
+
+void test_inactive_slot_treats_pending_slot_as_running_slot(void)
+{
+    boot_policy_mark_slot_pending(&state, BOOT_SLOT_B, 4U, 0x12345678U);
+
+    TEST_ASSERT_EQUAL_UINT32(BOOT_SLOT_A, boot_policy_inactive_slot(&state));
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -82,5 +101,7 @@ int main(void)
     RUN_TEST(test_exhausted_pending_slot_falls_back_to_active);
     RUN_TEST(test_marks_pending_slot_bad);
     RUN_TEST(test_confirms_pending_slot);
+    RUN_TEST(test_inactive_slot_is_opposite_active_slot);
+    RUN_TEST(test_inactive_slot_treats_pending_slot_as_running_slot);
     return UNITY_END();
 }

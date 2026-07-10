@@ -11,6 +11,7 @@ typedef struct {
     uint8_t payload[UPDATE_PROTOCOL_MAX_PAYLOAD];
     uint32_t expected_image_size;
     uint32_t expected_image_crc32;
+    uint32_t target_slot;
     uint32_t candidate_version;
     uint32_t candidate_crc32;
     uint32_t received_image_size;
