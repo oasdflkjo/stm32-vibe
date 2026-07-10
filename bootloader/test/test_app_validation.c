@@ -52,6 +52,8 @@ static void prepare_valid_image(void)
     manifest->software_version = 7U;
     manifest->hardware_id = 0x152U;
     manifest->image_flags = 0x01U;
+    manifest->reserved[APP_MANIFEST_APP_ID_WORD] = 0xAAAA5555U;
+    manifest->reserved[APP_MANIFEST_BOARD_ID_WORD] = 0xBBBB6666U;
     manifest->image_crc32 = test_crc32();
 }
 
@@ -104,6 +106,8 @@ void test_accepts_image_with_valid_manifest_and_crc(void)
     TEST_ASSERT_EQUAL_UINT32(sizeof(test_image), result.image_size);
     TEST_ASSERT_EQUAL_HEX32(0x152U, result.hardware_id);
     TEST_ASSERT_EQUAL_HEX32(0x01U, result.image_flags);
+    TEST_ASSERT_EQUAL_HEX32(0xAAAA5555U, result.app_id);
+    TEST_ASSERT_EQUAL_HEX32(0xBBBB6666U, result.board_id);
     TEST_ASSERT_EQUAL_HEX32(result.expected_crc32, result.calculated_crc32);
 }
 

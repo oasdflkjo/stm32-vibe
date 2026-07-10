@@ -18,6 +18,8 @@ typedef struct {
     uint32_t calculated_crc32;
     uint32_t hardware_id;
     uint32_t image_flags;
+    uint32_t app_id;
+    uint32_t board_id;
 } app_image_result_t;
 
 app_image_result_t app_image_validate(const uint8_t *image,

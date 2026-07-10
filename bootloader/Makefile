@@ -35,7 +35,11 @@ LDFLAGS := $(MCU_FLAGS) -Tlinker.ld -Wl,--gc-sections -Wl,-Map=$(BUILD_DIR)/$(PR
 SRCS := \
   src/main.c \
   src/app_image.c \
-  src/app_validation.c
+  src/app_validation.c \
+  src/boot_flash_stm32l1.c \
+  src/boot_policy.c \
+  src/boot_state_store_stm32l1.c \
+  src/update_command.c
 
 SHARED_SRCS := \
   $(SHARED)/boot/boot_state.c \
@@ -44,7 +48,10 @@ SHARED_SRCS := \
   $(SHARED)/libc/syscalls.c \
   $(HAL_IMPL_DIR)/critical.c \
   $(HAL_IMPL_DIR)/itm.c \
-  $(SHARED)/trace/trace.c
+  $(HAL_IMPL_DIR)/uart.c \
+  $(SHARED)/trace/trace.c \
+  $(SHARED)/update/update_protocol.c \
+  $(SHARED)/update/update_stream.c
 
 OBJS := \
   $(patsubst src/%,$(BUILD_DIR)/%,$(SRCS:.c=.o)) \
@@ -73,16 +80,44 @@ TEST_BOOT_STATE_SRCS := \
   test/test_boot_state.c \
   $(SHARED)/boot/boot_state.c \
   $(UNITY)/unity.c
+TEST_BOOT_POLICY_BIN := $(TEST_DIR)/test_boot_policy
+TEST_BOOT_POLICY_SRCS := \
+  test/test_boot_policy.c \
+  src/boot_policy.c \
+  $(SHARED)/boot/boot_state.c \
+  $(UNITY)/unity.c
+TEST_UPDATE_COMMAND_BIN := $(TEST_DIR)/test_update_command
+TEST_UPDATE_COMMAND_SRCS := \
+  test/test_update_command.c \
+  src/update_command.c \
+  src/app_image.c \
+  src/app_validation.c \
+  src/boot_policy.c \
+  test/boot_flash_mock.c \
+  test/boot_state_store_mock.c \
+  $(SHARED)/boot/boot_state.c \
+  $(SHARED)/hal_impl/mock/uart.c \
+  $(SHARED)/update/update_protocol.c \
+  $(SHARED)/update/update_stream.c \
+  $(UNITY)/unity.c
 TEST_CFLAGS := -Isrc -I$(SHARED) -I$(UNITY) -std=c11 -Wall -Wextra -Werror -g
 
-test: $(TEST_APP_VALIDATION_BIN) $(TEST_BOOT_STATE_BIN)
+test: $(TEST_APP_VALIDATION_BIN) $(TEST_BOOT_STATE_BIN) $(TEST_BOOT_POLICY_BIN) $(TEST_UPDATE_COMMAND_BIN)
 	./$(TEST_APP_VALIDATION_BIN)
 	./$(TEST_BOOT_STATE_BIN)
+	./$(TEST_BOOT_POLICY_BIN)
+	./$(TEST_UPDATE_COMMAND_BIN)
 
 $(TEST_APP_VALIDATION_BIN): $(TEST_APP_VALIDATION_SRCS) | $(TEST_DIR)
 	gcc $(TEST_CFLAGS) $^ -o $@
 
 $(TEST_BOOT_STATE_BIN): $(TEST_BOOT_STATE_SRCS) | $(TEST_DIR)
+	gcc $(TEST_CFLAGS) $^ -o $@
+
+$(TEST_BOOT_POLICY_BIN): $(TEST_BOOT_POLICY_SRCS) | $(TEST_DIR)
+	gcc $(TEST_CFLAGS) $^ -o $@
+
+$(TEST_UPDATE_COMMAND_BIN): $(TEST_UPDATE_COMMAND_SRCS) | $(TEST_DIR)
 	gcc $(TEST_CFLAGS) $^ -o $@
 
 $(TEST_DIR):

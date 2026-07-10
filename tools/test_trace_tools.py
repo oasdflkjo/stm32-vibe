@@ -9,6 +9,8 @@ from unittest.mock import patch
 from tools.decode_trace import FrameDecoder, ItmDecoder, crc8, format_record, load_events
 from tools.extract_trace_map import build_map, parse_format
 from tools.finalize_image import (
+    MANIFEST_APP_ID_WORD,
+    MANIFEST_BOARD_ID_WORD,
     MANIFEST_CRC32_OFFSET,
     MANIFEST_FORMAT,
     MANIFEST_MAGIC,
@@ -17,6 +19,7 @@ from tools.finalize_image import (
     MANIFEST_SIZE,
     MANIFEST_VERSION,
     finalize_bytes,
+    metadata_id,
 )
 
 
@@ -107,7 +110,9 @@ class ImageFinalizerTests(unittest.TestCase):
     def test_embeds_size_crc_and_version(self) -> None:
         image = bytes(MANIFEST_OFFSET + struct.calcsize(MANIFEST_FORMAT) + 32)
 
-        patched, manifest_bytes = finalize_bytes(image, version=7)
+        patched, manifest_bytes, metadata = finalize_bytes(
+            image, version=7, app_name="vibe", board_name="ST NUCLEO-L152RE"
+        )
         (
             magic,
             manifest_version,
@@ -130,9 +135,14 @@ class ImageFinalizerTests(unittest.TestCase):
         self.assertEqual(manifest_size, MANIFEST_SIZE)
         self.assertEqual(image_size, len(image))
         self.assertEqual(software_version, 7)
-        self.assertEqual(hardware_id, 0)
+        self.assertEqual(hardware_id, metadata_id("ST NUCLEO-L152RE"))
         self.assertEqual(image_flags, 0)
-        self.assertEqual(reserved, [0] * MANIFEST_RESERVED_WORDS)
+        self.assertEqual(reserved[MANIFEST_APP_ID_WORD], metadata_id("vibe"))
+        self.assertEqual(
+            reserved[MANIFEST_BOARD_ID_WORD], metadata_id("ST NUCLEO-L152RE")
+        )
+        self.assertEqual(metadata["application_name"], "vibe")
+        self.assertEqual(metadata["board_name"], "ST NUCLEO-L152RE")
         self.assertEqual(image_crc32, zlib.crc32(crc_image) & 0xFFFFFFFF)
 
 

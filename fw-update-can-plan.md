@@ -38,10 +38,39 @@ The branch is ready to continue from a clean protocol foundation:
 - `shared/update/update_protocol.c` encodes and decodes update packets.
 - `shared/update/update_stream.c` handles UART-style byte-stream resync,
   partial packets, bad CRC recovery, and back-to-back packets.
+- `shared/hal/uart.h` defines a small byte-oriented UART HAL with mock and
+  STM32L1 USART2 implementations.
+- `bootloader/src/update_command.c` feeds UART bytes into `update_stream_t` and
+  returns protocol ACK packets for decoded commands and parser errors.
+- The bootloader update loop now handles a minimal transfer session:
+  `BEGIN` erases slot B, `BLOCK` writes contiguous byte ranges using packet
+  sequence as the slot offset, `END` checks completeness, and `VALIDATE` checks
+  the candidate image manifest and CRC in slot B.
+- `bootloader/src/boot_flash_stm32l1.c` provides direct STM32L1 slot-B
+  erase/program support behind a testable `boot_flash` boundary.
+- `bootloader/src/boot_state_store_stm32l1.c` reads and writes two boot-state
+  record copies in the reserved boot-state flash region.
+- `bootloader/src/boot_policy.c` selects confirmed or pending slots, increments
+  pending boot attempts before boot, marks failed pending slots bad, and
+  promotes pending metadata to confirmed metadata on confirm.
+- `ACTIVATE` now persists slot B as pending after candidate validation.
 - `apps/vibe/test/test_update_protocol.c` and
   `apps/vibe/test/test_update_stream.c` cover those layers.
-- The next implementation step is a UART HAL/mock and a bootloader update
-  command loop that feeds received bytes into `update_stream_t`.
+- `bootloader/test/test_update_command.c` covers split-packet receive, bad CRC
+  recovery reporting, unsupported command ACK status, transfer sequencing,
+  slot-B writes, and candidate validation.
+- `bootloader/test/test_boot_policy.c` covers pending-slot selection, attempt
+  counting, rollback marking, and confirmation.
+- The application build can now produce slot-specific images. `APP_SLOT=A`
+  links at slot A, `APP_SLOT=B` links at slot B, and `make firmware-slot-b`
+  writes the slot-B artifact set under `apps/vibe/build/slot-b/`.
+- `tools/finalize_image.py` stamps application and board metadata. The 64-byte
+  manifest carries fixed-size application and board IDs, while the generated
+  JSON sidecar carries updater-facing names: `application_name` and
+  `board_name`.
+- The next implementation step is host-side updater tooling that reads the JSON
+  sidecar, sends `BEGIN` metadata, streams `BLOCK` packets, and activates the
+  candidate.
 - CAN transport should later fragment the same protocol packets into classic
   CAN frames.
 

@@ -1,6 +1,8 @@
 PROJECT := vibe
 BUILD_DIR := build
 TEST_DIR := build/test
+APP_NAME ?= $(PROJECT)
+APP_SLOT ?= A
 
 REPO_ROOT := ../..
 include $(REPO_ROOT)/config.mk
@@ -27,6 +29,15 @@ TRACE_MAP     := $(BUILD_DIR)/trace_map.json
 TRACE_EXTRACTOR := $(REPO_ROOT)/tools/extract_trace_map.py
 IMAGE_FINALIZER := $(REPO_ROOT)/tools/finalize_image.py
 
+ifeq ($(APP_SLOT),A)
+APP_FLASH_ADDR := $(APP_SLOT_A_FLASH_ADDR)
+else ifeq ($(APP_SLOT),B)
+APP_FLASH_ADDR := $(APP_SLOT_B_FLASH_ADDR)
+else
+$(error Unknown APP_SLOT '$(APP_SLOT)'; expected A or B)
+endif
+APP_FLASH_SIZE := $(APP_SLOT_SIZE)
+
 DEFINES   := $(BOARD_DEFINES) -DTRACE_SWO_BAUD=$(SWO_BAUD)U -DWATCHDOG_TIMEOUT_MS=$(WATCHDOG_TIMEOUT_MS)U
 INCLUDES  := \
   -Isrc \
@@ -35,7 +46,7 @@ INCLUDES  := \
 
 CFLAGS  := $(MCU_FLAGS) $(DEFINES) $(INCLUDES) -std=c11 -Wall -Wextra -Werror -Os -g3 -ffunction-sections -fdata-sections
 ASFLAGS := $(MCU_FLAGS) -g3
-LDFLAGS := $(MCU_FLAGS) -Tlinker.ld -Wl,--gc-sections -Wl,-Map=$(BUILD_DIR)/$(PROJECT).map --specs=nano.specs --specs=nosys.specs
+LDFLAGS := $(MCU_FLAGS) -Tlinker.ld -Wl,--defsym=APP_FLASH_ORIGIN=$(APP_FLASH_ADDR) -Wl,--defsym=APP_FLASH_LENGTH=$(APP_FLASH_SIZE) -Wl,--gc-sections -Wl,-Map=$(BUILD_DIR)/$(PROJECT).map --specs=nano.specs --specs=nosys.specs
 
 APP_LOCAL_SRCS := \
   src/main.c \
@@ -64,10 +75,14 @@ OBJS := \
 
 ELF := $(BUILD_DIR)/$(PROJECT).elf
 BIN := $(BUILD_DIR)/$(PROJECT).bin
+METADATA := $(BUILD_DIR)/$(PROJECT).json
 
-.PHONY: firmware test clean size flash flash-swo flash-fault-test flash-watchdog-test probe reset erase debug-server gdb swo-trace
+.PHONY: firmware firmware-slot-b test clean size flash flash-slot-b flash-swo flash-fault-test flash-watchdog-test probe reset erase debug-server gdb swo-trace
 
 firmware: $(ELF) $(BIN) $(TRACE_MAP) size
+
+firmware-slot-b:
+	$(MAKE) firmware APP_SLOT=B BUILD_DIR=build/slot-b
 
 # ── Unit tests (host gcc, mock HAL) ──────────────────────────────────────────
 UNITY := $(REPO_ROOT)/vendor/unity/src
@@ -133,7 +148,7 @@ test: $(TEST_LED_BIN) $(TEST_TRACE_BIN) $(TEST_FAULT_BIN) $(TEST_WATCHDOG_BIN) $
 	./$(TEST_CAN_BIN)
 	./$(TEST_UPDATE_PROTOCOL_BIN)
 	./$(TEST_UPDATE_STREAM_BIN)
-	cd $(REPO_ROOT) && $(PYTHON) -m unittest tools.test_trace_tools
+	cd $(REPO_ROOT) && $(PYTHON) -m unittest tools.test_trace_tools tools.test_finalize_image
 
 $(TEST_LED_BIN): $(TEST_LED_SRCS) | $(TEST_DIR)
 	gcc $(TEST_CFLAGS) $^ -o $@
@@ -187,6 +202,9 @@ $(BIN): $(ELF) $(IMAGE_FINALIZER) $(REPO_ROOT)/config.mk
 	  --elf $(ELF) \
 	  --bin $@ \
 	  --version $(APP_VERSION) \
+	  --app-name $(APP_NAME) \
+	  --board-name "$(BOARD_NAME)" \
+	  --metadata $(METADATA) \
 	  --objcopy $(OBJCOPY)
 
 $(TRACE_MAP): $(BIN) $(TRACE_EXTRACTOR)
@@ -201,7 +219,10 @@ size: $(ELF)
 	$(SIZE) $<
 
 flash: $(BIN) $(TRACE_MAP)
-	$(ST_FLASH) --reset write $(BIN) $(APP_SLOT_A_FLASH_ADDR)
+	$(ST_FLASH) --reset write $(BIN) $(APP_FLASH_ADDR)
+
+flash-slot-b:
+	$(MAKE) flash APP_SLOT=B BUILD_DIR=build/slot-b
 
 flash-swo:
 	$(MAKE) -B flash \

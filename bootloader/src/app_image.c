@@ -54,6 +54,8 @@ app_image_result_t app_image_validate(const uint8_t *image,
     result.expected_crc32 = manifest->image_crc32;
     result.hardware_id = manifest->hardware_id;
     result.image_flags = manifest->image_flags;
+    result.app_id = app_manifest_app_id(manifest);
+    result.board_id = app_manifest_board_id(manifest);
 
     if (manifest->magic != APP_MANIFEST_MAGIC) {
         return result;

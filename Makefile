@@ -14,7 +14,7 @@ COMBINED_HEX := $(COMBINED_DIR)/combined.hex
 
 ALL_PROJECTS := bootloader $(APP_DIR)
 
-.PHONY: all _firmware _combined clean test flash flash-swo flash-fault-test flash-watchdog-test flash-bootloader flash-app container-build container-shell $(ALL_PROJECTS)
+.PHONY: all _firmware _combined clean test flash flash-swo flash-fault-test flash-watchdog-test flash-bootloader flash-app firmware-slot-b flash-app-slot-b container-build container-shell $(ALL_PROJECTS)
 
 # ── Developer entry points (run everything inside the container) ──────────────
 all: container-build
@@ -35,6 +35,12 @@ flash-bootloader: bootloader/build/bootloader.bin
 
 flash-app:
 	$(MAKE) -C $(APP_DIR) flash
+
+firmware-slot-b:
+	$(MAKE) -C $(APP_DIR) firmware-slot-b
+
+flash-app-slot-b:
+	$(MAKE) -C $(APP_DIR) flash-slot-b
 
 flash-swo:
 	$(MAKE) -C bootloader flash

@@ -115,6 +115,14 @@ make BOARD=nucleo-l152re
 
 `BOARD=nucleo-f446re` is reserved for the CAN-capable NUCLEO-F446RE port.
 
+Build a slot-B-linked app image for update testing:
+
+```sh
+make firmware-slot-b
+# or directly:
+make -C apps/vibe firmware-slot-b
+```
+
 Run unit tests (host `gcc`, no cross-compilation needed):
 
 ```sh
@@ -139,6 +147,8 @@ Build outputs:
 build/combined.hex              ← bootloader + app merged, ready to flash
 bootloader/build/bootloader.elf / .bin / trace_map.json
 apps/vibe/build/vibe.elf / .bin / trace_map.json
+apps/vibe/build/vibe.json
+apps/vibe/build/slot-b/vibe.elf / .bin / trace_map.json / vibe.json
 apps/vibe/build/swo/vibe.elf / .bin / trace_map.json
 ```
 
@@ -195,13 +205,17 @@ diagnosis.
 Every application contains a 64-byte manifest at offset `0x200` from its flash
 base. It records a magic value, manifest format version, manifest size, exact
 image size, CRC-32, software version from `APP_VERSION` in `config.mk`,
-hardware compatibility ID, image flags, and reserved words for future metadata.
+hardware compatibility ID, image flags, application ID, board ID, and reserved
+words for future metadata. The IDs are CRC-32 values derived from the stamped
+application and board names.
 
 After linking, `tools/finalize_image.py` creates the raw binary, calculates its
-CRC with the manifest CRC field treated as zero, and patches the same manifest
-into both the ELF and binary. The bootloader checks this manifest and CRC before
-it validates the vector table or runs any application code. Its SWO trace
-reports the accepted version and size, or the rejection reason and CRC values.
+CRC with the manifest CRC field treated as zero, patches the same manifest into
+both the ELF and binary, and emits a JSON sidecar with display metadata such as
+`application_name`, `board_name`, IDs, version, size, and CRC. The bootloader
+checks this manifest and CRC before it validates the vector table or runs any
+application code. Its SWO trace reports the accepted version and size, or the
+rejection reason and CRC values.
 
 This catches incomplete flashing, corruption, an erased application, and
 images linked for an incompatible layout. It is integrity checking, not secure
