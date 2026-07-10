@@ -1,5 +1,6 @@
 #include "platform/application.h"
 #include "platform/boot_confirmation.h"
+#include "platform/boot_info.h"
 #include "platform/health_supervisor.h"
 #include "platform/update_agent.h"
 
@@ -33,15 +34,20 @@ int main(void)
 {
     health_supervisor_t health_supervisor;
     boot_confirmation_t boot_confirmation;
-    const app_services_t services = {
-        .status_led_set = platform_status_led_set,
-        .request_update_reset = platform_request_update_reset,
-    };
+    app_services_t services;
+
+    services.status_led_set = platform_status_led_set;
+    services.request_update_reset = platform_request_update_reset;
 
 #ifdef ENABLE_SWO_TRACE
     itm_init(SystemCoreClock, TRACE_SWO_BAUD);
 #endif
     fault_handlers_init();
+    if (!platform_boot_info_init()) {
+        TRACE("BOOT handoff invalid");
+        while (1) {
+        }
+    }
     gpio_led_init();
     systick_init();
     update_agent_init(platform_request_update_reset);

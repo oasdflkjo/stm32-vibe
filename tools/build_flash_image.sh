@@ -100,11 +100,8 @@ mkdir -p "$(dirname "$bin_output")"
 printf 'Building bootloader...\n'
 make -C bootloader firmware
 
-printf 'Building %s slot A...\n' "$app"
-make -C "$app_dir" firmware APP_SLOT=A BUILD_DIR=build
-
-printf 'Building %s slot B...\n' "$app"
-make -C "$app_dir" firmware APP_SLOT=B BUILD_DIR=build/slot-b
+printf 'Building canonical %s image...\n' "$app"
+make -C "$app_dir" firmware BUILD_DIR=build
 
 boot_hex="build/bootloader.hex"
 slot_a_hex="build/${app}-slot-a.hex"
@@ -112,8 +109,8 @@ slot_b_hex="build/${app}-slot-b.hex"
 
 printf 'Creating Intel HEX images...\n'
 arm-none-eabi-objcopy -O ihex bootloader/build/bootloader.elf "$boot_hex"
-arm-none-eabi-objcopy -O ihex "$app_dir/build/${app}.elf" "$slot_a_hex"
-arm-none-eabi-objcopy -O ihex "$app_dir/build/slot-b/${app}.elf" "$slot_b_hex"
+arm-none-eabi-objcopy -I binary -O ihex --change-addresses "$slot_a_addr" "$app_dir/build/${app}.bin" "$slot_a_hex"
+arm-none-eabi-objcopy -I binary -O ihex --change-addresses "$slot_b_addr" "$app_dir/build/${app}.bin" "$slot_b_hex"
 
 grep -v ':00000001FF' "$boot_hex" > "$output"
 grep -v ':00000001FF' "$slot_a_hex" >> "$output"
@@ -135,7 +132,7 @@ if [ "$flash" -ne 0 ]; then
   printf 'Flashing %s slot A...\n' "$app"
   st-flash write "$app_dir/build/${app}.bin" "$slot_a_addr"
   printf 'Flashing %s slot B...\n' "$app"
-  st-flash write "$app_dir/build/slot-b/${app}.bin" "$slot_b_addr"
+  st-flash write "$app_dir/build/${app}.bin" "$slot_b_addr"
   printf 'Resetting target...\n'
   st-flash reset
 fi

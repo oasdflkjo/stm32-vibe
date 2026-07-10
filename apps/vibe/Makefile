@@ -44,9 +44,9 @@ INCLUDES  := \
   -I$(SHARED) \
   $(BOARD_INCLUDES)
 
-CFLAGS  := $(MCU_FLAGS) $(DEFINES) $(INCLUDES) -std=c11 -Wall -Wextra -Werror -Os -g3 -ffunction-sections -fdata-sections
+CFLAGS  := $(MCU_FLAGS) $(DEFINES) $(INCLUDES) -std=c11 -Wall -Wextra -Werror -Os -g3 -ffunction-sections -fdata-sections -fpic -msingle-pic-base -mpic-register=r9 -mno-pic-data-is-text-relative
 ASFLAGS := $(MCU_FLAGS) -g3
-LDFLAGS := $(MCU_FLAGS) -Tlinker.ld -Wl,--defsym=APP_FLASH_ORIGIN=$(APP_FLASH_ADDR) -Wl,--defsym=APP_FLASH_LENGTH=$(APP_FLASH_SIZE) -Wl,--gc-sections -Wl,-Map=$(BUILD_DIR)/$(PROJECT).map --specs=nano.specs --specs=nosys.specs
+LDFLAGS := $(MCU_FLAGS) -Tlinker.ld -Wl,--defsym=APP_FLASH_LENGTH=$(APP_FLASH_SIZE) -Wl,--no-relax -Wl,--gc-sections -Wl,-Map=$(BUILD_DIR)/$(PROJECT).map --specs=nano.specs --specs=nosys.specs
 
 APP_LOCAL_SRCS := \
   src/app.c \
@@ -55,11 +55,14 @@ APP_LOCAL_SRCS := \
 
 HAL_SRCS := \
   $(SHARED)/platform/runtime.c \
+  $(SHARED)/platform/pic_startup.s \
   $(SHARED)/platform/boot_confirmation.c \
   $(SHARED)/platform/boot_confirmation_store.c \
+  $(SHARED)/platform/boot_info.c \
   $(SHARED)/platform/health_supervisor.c \
   $(SHARED)/platform/update_agent.c \
   $(SHARED)/boot/boot_state.c \
+  $(SHARED)/boot/boot_runtime.c \
   $(SHARED)/fault/fault_report.c \
   $(FAULT_IMPL_SRC) \
   $(SHARED)/libc/syscalls.c \
@@ -118,6 +121,12 @@ TEST_BOOT_CONFIRM_SRCS := \
   $(SHARED)/platform/boot_confirmation.c \
   $(UNITY)/unity.c
 
+TEST_BOOT_INFO_SRCS := \
+  test/test_boot_info.c \
+  $(SHARED)/platform/boot_info.c \
+  $(SHARED)/boot/boot_runtime.c \
+  $(UNITY)/unity.c
+
 TEST_TRACE_SRCS := \
   test/test_trace.c \
   $(SHARED)/trace/trace.c \
@@ -166,6 +175,7 @@ TEST_LED_BIN := $(TEST_DIR)/test_led_task
 TEST_APP_BIN := $(TEST_DIR)/test_app
 TEST_HEALTH_BIN := $(TEST_DIR)/test_health_supervisor
 TEST_BOOT_CONFIRM_BIN := $(TEST_DIR)/test_boot_confirmation
+TEST_BOOT_INFO_BIN := $(TEST_DIR)/test_boot_info
 TEST_TRACE_BIN := $(TEST_DIR)/test_trace
 TEST_FAULT_BIN := $(TEST_DIR)/test_fault_report
 TEST_WATCHDOG_BIN := $(TEST_DIR)/test_watchdog
@@ -176,11 +186,12 @@ TEST_UPDATE_AGENT_BIN := $(TEST_DIR)/test_update_agent
 
 TEST_CFLAGS := -Isrc -I$(SHARED) -I$(UNITY) -std=c11 -Wall -Wextra -Werror -g
 
-test: $(TEST_LED_BIN) $(TEST_APP_BIN) $(TEST_HEALTH_BIN) $(TEST_BOOT_CONFIRM_BIN) $(TEST_TRACE_BIN) $(TEST_FAULT_BIN) $(TEST_WATCHDOG_BIN) $(TEST_CAN_BIN) $(TEST_UPDATE_PROTOCOL_BIN) $(TEST_UPDATE_STREAM_BIN) $(TEST_UPDATE_AGENT_BIN)
+test: $(TEST_LED_BIN) $(TEST_APP_BIN) $(TEST_HEALTH_BIN) $(TEST_BOOT_CONFIRM_BIN) $(TEST_BOOT_INFO_BIN) $(TEST_TRACE_BIN) $(TEST_FAULT_BIN) $(TEST_WATCHDOG_BIN) $(TEST_CAN_BIN) $(TEST_UPDATE_PROTOCOL_BIN) $(TEST_UPDATE_STREAM_BIN) $(TEST_UPDATE_AGENT_BIN)
 	./$(TEST_LED_BIN)
 	./$(TEST_APP_BIN)
 	./$(TEST_HEALTH_BIN)
 	./$(TEST_BOOT_CONFIRM_BIN)
+	./$(TEST_BOOT_INFO_BIN)
 	./$(TEST_TRACE_BIN)
 	./$(TEST_FAULT_BIN)
 	./$(TEST_WATCHDOG_BIN)
@@ -200,6 +211,9 @@ $(TEST_HEALTH_BIN): $(TEST_HEALTH_SRCS) | $(TEST_DIR)
 	gcc $(TEST_CFLAGS) $^ -o $@
 
 $(TEST_BOOT_CONFIRM_BIN): $(TEST_BOOT_CONFIRM_SRCS) | $(TEST_DIR)
+	gcc $(TEST_CFLAGS) $^ -o $@
+
+$(TEST_BOOT_INFO_BIN): $(TEST_BOOT_INFO_SRCS) | $(TEST_DIR)
 	gcc $(TEST_CFLAGS) $^ -o $@
 
 $(TEST_TRACE_BIN): $(TEST_TRACE_SRCS) | $(TEST_DIR)
@@ -240,6 +254,10 @@ $(BUILD_DIR)/shared/%.o: $(SHARED)/%.c | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+$(BUILD_DIR)/shared/%.o: $(SHARED)/%.s | $(BUILD_DIR)
+	@mkdir -p $(dir $@)
+	$(CC) $(ASFLAGS) -c $< -o $@
+
 $(BUILD_DIR)/$(DEVICE_SYSTEM_OBJ): $(DEVICE_SYSTEM) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -257,7 +275,8 @@ $(BIN): $(ELF) $(IMAGE_FINALIZER) $(REPO_ROOT)/config.mk
 	  --app-name $(APP_NAME) \
 	  --board-name "$(BOARD_NAME)" \
 	  --metadata $(METADATA) \
-	  --objcopy $(OBJCOPY)
+	  --objcopy $(OBJCOPY) \
+	  --nm $(NM)
 
 $(TRACE_MAP): $(BIN) $(TRACE_EXTRACTOR)
 	$(PYTHON) $(TRACE_EXTRACTOR) \

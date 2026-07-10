@@ -5,6 +5,8 @@ from tools.finalize_image import (
     MANIFEST_BOARD_ID_WORD,
     MANIFEST_FORMAT,
     MANIFEST_OFFSET,
+    MANIFEST_VECTOR_WORDS_WORD,
+    MANIFEST_GOT_OFFSET_WORD,
     finalize_bytes,
     metadata_id,
 )
@@ -32,6 +34,22 @@ class FinalizeImageTests(unittest.TestCase):
             patched[MANIFEST_OFFSET:MANIFEST_OFFSET + len(manifest)], manifest
         )
         self.assertEqual(metadata["image_crc32"], fields[4])
+
+    def test_finalize_bytes_stamps_relocation_metadata(self):
+        image = bytes([0xFF]) * 1024
+        relocation = {
+            "vector_words": 78,
+            "got_offset": 700,
+            "got_size": 24,
+            "data_load_offset": 724,
+        }
+        _, manifest, metadata = finalize_bytes(
+            image, 3, "vibe", "board", relocation
+        )
+        reserved = struct.unpack(MANIFEST_FORMAT, manifest)[8:]
+        self.assertEqual(reserved[MANIFEST_VECTOR_WORDS_WORD], 78)
+        self.assertEqual(reserved[MANIFEST_GOT_OFFSET_WORD], 700)
+        self.assertEqual(metadata["got_size"], 24)
 
 
 if __name__ == "__main__":

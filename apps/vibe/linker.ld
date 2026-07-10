@@ -1,6 +1,6 @@
 ENTRY(Reset_Handler)
 
-APP_FLASH_ORIGIN = DEFINED(APP_FLASH_ORIGIN) ? APP_FLASH_ORIGIN : 0x08011000;
+APP_FLASH_ORIGIN = 0;
 APP_FLASH_LENGTH = DEFINED(APP_FLASH_LENGTH) ? APP_FLASH_LENGTH : 220K;
 
 _estack = ORIGIN(RAM) + LENGTH(RAM);
@@ -9,7 +9,8 @@ _Min_Stack_Size = 0x400;
 MEMORY
 {
   FLASH (rx)  : ORIGIN = APP_FLASH_ORIGIN, LENGTH = APP_FLASH_LENGTH
-  RAM   (xrw) : ORIGIN = 0x20000000, LENGTH = 80K
+  /* Top 2 KiB is shared runtime RAM: GOT, vectors, handoff, update marker. */
+  RAM   (xrw) : ORIGIN = 0x20000000, LENGTH = 78K
 }
 
 PHDRS
@@ -22,9 +23,11 @@ SECTIONS
 {
   .isr_vector :
   {
+    __vector_start = .;
     . = ALIGN(4);
     KEEP(*(.isr_vector))
     . = ALIGN(4);
+    __vector_end = .;
   } > FLASH :text
 
   .app_manifest ORIGIN(FLASH) + 0x200 :
@@ -46,6 +49,16 @@ SECTIONS
     . = ALIGN(4);
     _etext = .;
   } > FLASH :text
+
+  .got :
+  {
+    __got_start = .;
+    *(.got)
+    *(.got.plt)
+    __got_end = .;
+  } > FLASH :text
+
+  ASSERT(SIZEOF(.got) <= 0x400, "Application GOT exceeds reserved runtime RAM")
 
   .ARM.extab :
   {
@@ -90,6 +103,7 @@ SECTIONS
   ASSERT(SIZEOF(.trace_fmt) <= 0x8000, "App trace format table exceeds its ID namespace")
 
   _sidata = LOADADDR(.data);
+  __data_load_start = LOADADDR(.data);
 
   .data :
   {

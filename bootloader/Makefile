@@ -43,6 +43,7 @@ SRCS := \
 
 SHARED_SRCS := \
   $(SHARED)/boot/boot_state.c \
+  $(SHARED)/boot/boot_runtime.c \
   $(HAL_IMPL_DIR)/boot_state_store.c \
   $(SHARED)/fault/fault_report.c \
   $(FAULT_IMPL_SRC) \
@@ -81,6 +82,11 @@ TEST_BOOT_STATE_SRCS := \
   test/test_boot_state.c \
   $(SHARED)/boot/boot_state.c \
   $(UNITY)/unity.c
+TEST_BOOT_RUNTIME_BIN := $(TEST_DIR)/test_boot_runtime
+TEST_BOOT_RUNTIME_SRCS := \
+  test/test_boot_runtime.c \
+  $(SHARED)/boot/boot_runtime.c \
+  $(UNITY)/unity.c
 TEST_BOOT_POLICY_BIN := $(TEST_DIR)/test_boot_policy
 TEST_BOOT_POLICY_SRCS := \
   test/test_boot_policy.c \
@@ -115,9 +121,10 @@ TEST_UPDATE_SESSION_SRCS := \
   $(UNITY)/unity.c
 TEST_CFLAGS := -Isrc -I$(SHARED) -I$(UNITY) -std=c11 -Wall -Wextra -Werror -g
 
-test: $(TEST_APP_VALIDATION_BIN) $(TEST_BOOT_STATE_BIN) $(TEST_BOOT_POLICY_BIN) $(TEST_UPDATE_COMMAND_BIN) $(TEST_UPDATE_SESSION_BIN)
+test: $(TEST_APP_VALIDATION_BIN) $(TEST_BOOT_STATE_BIN) $(TEST_BOOT_RUNTIME_BIN) $(TEST_BOOT_POLICY_BIN) $(TEST_UPDATE_COMMAND_BIN) $(TEST_UPDATE_SESSION_BIN)
 	./$(TEST_APP_VALIDATION_BIN)
 	./$(TEST_BOOT_STATE_BIN)
+	./$(TEST_BOOT_RUNTIME_BIN)
 	./$(TEST_BOOT_POLICY_BIN)
 	./$(TEST_UPDATE_COMMAND_BIN)
 	./$(TEST_UPDATE_SESSION_BIN)
@@ -126,6 +133,9 @@ $(TEST_APP_VALIDATION_BIN): $(TEST_APP_VALIDATION_SRCS) | $(TEST_DIR)
 	gcc $(TEST_CFLAGS) $^ -o $@
 
 $(TEST_BOOT_STATE_BIN): $(TEST_BOOT_STATE_SRCS) | $(TEST_DIR)
+	gcc $(TEST_CFLAGS) $^ -o $@
+
+$(TEST_BOOT_RUNTIME_BIN): $(TEST_BOOT_RUNTIME_SRCS) | $(TEST_DIR)
 	gcc $(TEST_CFLAGS) $^ -o $@
 
 $(TEST_BOOT_POLICY_BIN): $(TEST_BOOT_POLICY_SRCS) | $(TEST_DIR)

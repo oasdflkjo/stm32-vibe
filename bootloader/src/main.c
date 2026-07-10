@@ -2,6 +2,7 @@
 #include "app_image.h"
 #include "app_validation.h"
 #include "boot/boot_state.h"
+#include "boot/boot_runtime.h"
 #include "boot/update_handoff.h"
 #include "boot_policy.h"
 #include "boot/boot_state_store.h"
@@ -13,12 +14,15 @@
 #include "stm32l1xx.h"
 
 __attribute__((naked, noreturn))
-static void start_app(uint32_t stack_pointer, uint32_t reset_handler)
+static void start_app(uint32_t stack_pointer, uint32_t reset_handler,
+                      uint32_t got_base)
 {
     (void)stack_pointer;
     (void)reset_handler;
+    (void)got_base;
     __asm volatile(
         "msr msp, r0\n"
+        "mov r9, r2\n"
         "movs r0, #0\n"
         "msr control, r0\n"
         "msr basepri, r0\n"
@@ -33,7 +37,8 @@ static void start_app(uint32_t stack_pointer, uint32_t reset_handler)
 __attribute__((noreturn))
 static void jump_to_app(uint32_t vector_base,
                         uint32_t stack_pointer,
-                        uint32_t reset_handler)
+                        uint32_t reset_handler,
+                        uint32_t got_base)
 {
     __disable_irq();
 
@@ -51,7 +56,18 @@ static void jump_to_app(uint32_t vector_base,
     SCB->VTOR = vector_base;
     __DSB();
     __ISB();
-    start_app(stack_pointer, reset_handler);
+    start_app(stack_pointer, reset_handler, got_base);
+}
+
+static int prepare_relocatable_runtime(uint32_t image_base,
+                                       const app_manifest_t *manifest)
+{
+    return boot_runtime_relocate(
+        (const uint8_t *)image_base, image_base, manifest->image_size,
+        app_manifest_vector_words(manifest), app_manifest_got_offset(manifest),
+        app_manifest_got_size(manifest),
+        (uint32_t *)BOOT_RUNTIME_VECTOR_ADDR, BOOT_RUNTIME_VECTOR_WORDS,
+        (uint32_t *)BOOT_RUNTIME_GOT_ADDR, BOOT_RUNTIME_GOT_WORDS);
 }
 
 static void run_update_loop_forever(boot_update_loop_t *update_loop)
@@ -77,6 +93,28 @@ static void enter_update_mode(void)
     TRACE("BOOT update uart init failed");
     while (1) {
     }
+}
+
+static void prepare_boot_handoff(const boot_candidate_t *candidate,
+                                 const app_image_result_t *image,
+                                 const boot_state_record_t *state)
+{
+    boot_handoff_t handoff = {
+        .magic = BOOT_HANDOFF_MAGIC,
+        .version = BOOT_HANDOFF_VERSION,
+        .size = sizeof(boot_handoff_t),
+        .image_base = candidate->image_base,
+        .image_size = image->image_size,
+        .slot = candidate->slot,
+        .state = candidate->boot_pending != 0U ? BOOT_HANDOFF_PENDING
+                                               : BOOT_HANDOFF_CONFIRMED,
+        .boot_attempt = candidate->boot_pending != 0U
+                            ? state->pending_attempts
+                            : 0U,
+    };
+
+    boot_handoff_update_crc(&handoff);
+    *boot_handoff_shared() = handoff;
 }
 
 static void probe_update_mode(void)
@@ -109,6 +147,7 @@ int main(void)
     const uint32_t *app_vectors;
     uint32_t stack_pointer;
     uint32_t reset_handler;
+    const app_manifest_t *manifest;
 
     itm_init(SystemCoreClock, TRACE_SWO_BAUD);
     fault_handlers_init();
@@ -174,9 +213,14 @@ int main(void)
     TRACE("BOOT image version=%u size=%u",
           image_result.version, image_result.image_size);
 
-    if (!app_vectors_are_valid_for_slot(stack_pointer, reset_handler,
-                                        candidate.image_base,
-                                        candidate.image_end)) {
+    manifest = (const app_manifest_t *)(candidate.image_base +
+                                        APP_MANIFEST_OFFSET);
+    if (app_manifest_is_relocatable(manifest)
+            ? !app_relative_vectors_are_valid(stack_pointer, reset_handler,
+                                               image_result.image_size)
+            : !app_vectors_are_valid_for_slot(stack_pointer, reset_handler,
+                                               candidate.image_base,
+                                               candidate.image_end)) {
         TRACE("BOOT invalid app sp=%08X reset=%08X",
               stack_pointer, reset_handler);
         if (candidate.boot_pending != 0U) {
@@ -187,5 +231,17 @@ int main(void)
     }
 
     TRACE("BOOT jump app");
-    jump_to_app(candidate.image_base, stack_pointer, reset_handler);
+    prepare_boot_handoff(&candidate, &image_result, &boot_state);
+    if (app_manifest_is_relocatable(manifest)) {
+        if (!prepare_relocatable_runtime(candidate.image_base, manifest)) {
+            TRACE("BOOT runtime relocation failed");
+            enter_update_mode();
+        }
+        app_vectors = (const uint32_t *)BOOT_RUNTIME_VECTOR_ADDR;
+        stack_pointer = app_vectors[0];
+        reset_handler = app_vectors[1];
+        jump_to_app(BOOT_RUNTIME_VECTOR_ADDR, stack_pointer, reset_handler,
+                    BOOT_RUNTIME_GOT_ADDR);
+    }
+    jump_to_app(candidate.image_base, stack_pointer, reset_handler, 0U);
 }

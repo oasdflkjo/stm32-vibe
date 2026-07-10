@@ -113,8 +113,8 @@ platform code selects board and driver implementations.
 
 Goal: establish a safe refactoring baseline before moving responsibilities.
 
-- [ ] Add a CI/test command that builds the bootloader and slot-A and slot-B
-      application images, not only host tests.
+- [ ] Add a CI/test command that builds the bootloader and the single canonical
+      relocatable application image, not only host tests.
 - [ ] Record current flash sizes and fail the build if bootloader or app images
       exceed their assigned regions.
 - [ ] Add an explicit support matrix to the README:
@@ -186,6 +186,59 @@ Acceptance criteria:
 - Update servicing latency is bounded by the documented application callback
   budget.
 - LED timing tests advance a fake clock and run deterministically.
+
+## Phase 2A — Use One Relocatable Application Image
+
+Goal: build one canonical application binary whose stored bytes are identical
+whether it is installed in slot A or slot B.
+
+Required invariants:
+
+- The release contains one application binary and one metadata sidecar.
+- The updater writes that binary unchanged to either inactive slot.
+- CRC and later signature verification cover the same bytes in both slots.
+- The bootloader supplies runtime slot/base information; the application image
+  does not contain a build-time slot selection.
+- Interrupt dispatch remains correct from either slot.
+
+Tasks:
+
+- [ ] Verify the selected ARM GCC position-independent code model on Cortex-M3,
+      including references to code, constants, globals, and function calls.
+- [ ] Define a slot-independent vector-table representation. Prefer storing
+      handler offsets and constructing a relocated vector table in reserved RAM
+      before application launch.
+- [ ] Reserve and assert sufficient aligned RAM for the relocated vector table
+      and boot handoff structure.
+- [ ] Define a versioned, CRC-protected boot handoff containing at least:
+      running slot, image base, image size, pending/confirmed state, and boot
+      attempt number.
+- [ ] Make the bootloader validate vector offsets, relocate vectors into RAM,
+      set `VTOR`, and enter the relocated reset handler.
+- [ ] Expose immutable boot information through a platform API; application
+      code must not inspect boot-state flash or infer its slot from addresses.
+- [ ] Change the linker script and finalizer to produce one canonical image
+      without `APP_SLOT` or an absolute slot origin.
+- [ ] Ensure startup code, `.data` initialization, constructors, and interrupt
+      handlers operate from both physical slots.
+- [ ] Update updater and flash-image tooling to reuse the exact same binary for
+      slot A and slot B.
+- [ ] Remove `APP_SLOT`, `firmware-slot-b`, `flash-slot-b`, and slot-specific
+      release artifacts.
+- [ ] Add host tests for handoff validation, vector relocation, invalid offsets,
+      and both slot bases.
+- [ ] Add a build assertion/test proving the bytes installed in A and B are
+      identical.
+- [ ] Hardware-test boot, UART discovery, SysTick interrupts, LED behavior,
+      update activation, confirmation, and rollback from both slots.
+
+Acceptance criteria:
+
+- One finalized binary boots unchanged from slot A and slot B.
+- No application build argument selects a slot.
+- The platform reports the correct current slot from bootloader-provided data.
+- No vector, code, constant, or data reference depends on a fixed flash slot.
+- Updating A to B and B to A uses the same release artifact.
 
 ## Phase 3 — Fix Watchdog and Boot Confirmation Ownership
 
@@ -350,8 +403,8 @@ diverging.
       source files, and optional components.
 - [ ] Move `APP_VERSION` out of global `config.mk` and require explicit release
       version metadata.
-- [ ] Provide one command that builds and clearly labels both slot variants;
-      application developers should not manually reason about target addresses.
+- [ ] Provide one command that builds the canonical relocatable application
+      artifact; application developers never select a slot address.
 - [ ] Add `apps/template/` or a documented generator containing only the public
       application interface and one host test.
 - [ ] Add a CI smoke-test application proving the template does not depend on
@@ -361,7 +414,7 @@ Acceptance criteria:
 
 - A new application does not copy the `vibe` Makefile.
 - Platform source lists live in one place.
-- A template application builds, links for both slots, finalizes, and tests.
+- A template application builds, finalizes, and tests as one relocatable image.
 
 ## Phase 9 — Harden Persistence and Power-Loss Behavior
 

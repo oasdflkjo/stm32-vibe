@@ -116,9 +116,16 @@ static update_status_t handle_validate(boot_update_session_t *session)
     image_result = app_image_validate(target_base, APP_SLOT_SIZE);
     if ((image_result.status != APP_IMAGE_VALID) ||
         (image_result.image_size != session->expected_image_size) ||
-        (image_result.expected_crc32 != session->expected_image_crc32) ||
-        !app_vectors_are_valid_for_slot(vectors[0], vectors[1], slot_start,
-                                        slot_end)) {
+        (image_result.expected_crc32 != session->expected_image_crc32)) {
+        return UPDATE_STATUS_BAD_IMAGE;
+    }
+    const app_manifest_t *manifest = (const app_manifest_t *)(
+        target_base + APP_MANIFEST_OFFSET);
+    if (app_manifest_is_relocatable(manifest)
+            ? !app_relative_vectors_are_valid(vectors[0], vectors[1],
+                                               image_result.image_size)
+            : !app_vectors_are_valid_for_slot(vectors[0], vectors[1],
+                                               slot_start, slot_end)) {
         return UPDATE_STATUS_BAD_IMAGE;
     }
     session->candidate_version = image_result.version;

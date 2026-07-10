@@ -13,6 +13,10 @@
 #define APP_MANIFEST_RESERVED_WORDS 8U
 #define APP_MANIFEST_APP_ID_WORD 0U
 #define APP_MANIFEST_BOARD_ID_WORD 1U
+#define APP_MANIFEST_VECTOR_WORDS_WORD 2U
+#define APP_MANIFEST_GOT_OFFSET_WORD 3U
+#define APP_MANIFEST_GOT_SIZE_WORD 4U
+#define APP_MANIFEST_DATA_LOAD_OFFSET_WORD 5U
 
 typedef struct {
     uint32_t magic;
@@ -30,5 +34,16 @@ typedef struct {
     ((manifest)->reserved[APP_MANIFEST_APP_ID_WORD])
 #define app_manifest_board_id(manifest) \
     ((manifest)->reserved[APP_MANIFEST_BOARD_ID_WORD])
+#define app_manifest_vector_words(manifest) \
+    ((manifest)->reserved[APP_MANIFEST_VECTOR_WORDS_WORD])
+#define app_manifest_got_offset(manifest) \
+    ((manifest)->reserved[APP_MANIFEST_GOT_OFFSET_WORD])
+#define app_manifest_got_size(manifest) \
+    ((manifest)->reserved[APP_MANIFEST_GOT_SIZE_WORD])
+#define app_manifest_data_load_offset(manifest) \
+    ((manifest)->reserved[APP_MANIFEST_DATA_LOAD_OFFSET_WORD])
+#define app_manifest_is_relocatable(manifest) \
+    (app_manifest_vector_words(manifest) >= 2U && \
+     app_manifest_vector_words(manifest) <= 128U)
 
 #define APP_MANIFEST_SIZE ((uint32_t)sizeof(app_manifest_t))
