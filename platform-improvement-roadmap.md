@@ -231,8 +231,9 @@ Tasks:
       identical.
 - [x] Hardware-test boot, SysTick interrupts, LED behavior, and platform boot
       information from both slots using the same finalized application bytes.
-- [ ] Hardware-test UART discovery, update activation, confirmation, and
-      rollback in both directions.
+- [x] Hardware-test UART discovery, update activation, and local health-based
+      confirmation in both directions using the canonical image.
+- [ ] Hardware-test failed-health rollback in both directions.
 
 Acceptance criteria:
 
