@@ -203,34 +203,36 @@ Required invariants:
 
 Tasks:
 
-- [ ] Verify the selected ARM GCC position-independent code model on Cortex-M3,
+- [x] Verify the selected ARM GCC position-independent code model on Cortex-M3,
       including references to code, constants, globals, and function calls.
-- [ ] Define a slot-independent vector-table representation. Prefer storing
+- [x] Define a slot-independent vector-table representation. Prefer storing
       handler offsets and constructing a relocated vector table in reserved RAM
       before application launch.
-- [ ] Reserve and assert sufficient aligned RAM for the relocated vector table
+- [x] Reserve and assert sufficient aligned RAM for the relocated vector table
       and boot handoff structure.
-- [ ] Define a versioned, CRC-protected boot handoff containing at least:
+- [x] Define a versioned, CRC-protected boot handoff containing at least:
       running slot, image base, image size, pending/confirmed state, and boot
       attempt number.
-- [ ] Make the bootloader validate vector offsets, relocate vectors into RAM,
+- [x] Make the bootloader validate vector offsets, relocate vectors into RAM,
       set `VTOR`, and enter the relocated reset handler.
-- [ ] Expose immutable boot information through a platform API; application
+- [x] Expose immutable boot information through a platform API; application
       code must not inspect boot-state flash or infer its slot from addresses.
-- [ ] Change the linker script and finalizer to produce one canonical image
+- [x] Change the linker script and finalizer to produce one canonical image
       without `APP_SLOT` or an absolute slot origin.
-- [ ] Ensure startup code, `.data` initialization, constructors, and interrupt
+- [x] Ensure startup code, `.data` initialization, constructors, and interrupt
       handlers operate from both physical slots.
-- [ ] Update updater and flash-image tooling to reuse the exact same binary for
+- [x] Update updater and flash-image tooling to reuse the exact same binary for
       slot A and slot B.
-- [ ] Remove `APP_SLOT`, `firmware-slot-b`, `flash-slot-b`, and slot-specific
+- [x] Remove `APP_SLOT`, `firmware-slot-b`, `flash-slot-b`, and slot-specific
       release artifacts.
-- [ ] Add host tests for handoff validation, vector relocation, invalid offsets,
+- [x] Add host tests for handoff validation, vector relocation, invalid offsets,
       and both slot bases.
-- [ ] Add a build assertion/test proving the bytes installed in A and B are
+- [x] Add a build assertion/test proving the bytes installed in A and B are
       identical.
-- [ ] Hardware-test boot, UART discovery, SysTick interrupts, LED behavior,
-      update activation, confirmation, and rollback from both slots.
+- [x] Hardware-test boot, SysTick interrupts, LED behavior, and platform boot
+      information from both slots using the same finalized application bytes.
+- [ ] Hardware-test UART discovery, update activation, confirmation, and
+      rollback in both directions.
 
 Acceptance criteria:
 
