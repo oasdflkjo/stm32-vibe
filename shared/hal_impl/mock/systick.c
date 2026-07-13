@@ -1,8 +1,12 @@
 #include "hal/systick.h"
 
-void systick_init(void) {}
+static uint32_t milliseconds;
+
+void systick_init(void) { milliseconds = 0U; }
+
+uint32_t systick_now_ms(void) { return milliseconds; }
 
 void systick_delay_ms(uint32_t ms)
 {
-    (void)ms;
+    milliseconds += ms;
 }

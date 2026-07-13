@@ -1,0 +1,36 @@
+BOARD_NAME := ST NUCLEO-L152RE
+BOARD_MCU := STM32L152RE
+BOARD_HAL_IMPL := stm32l1
+
+BOOTLOADER_FLASH_ADDR := 0x08000000
+BOOTLOADER_FLASH_SIZE := 0x00010000
+BOOT_STATE_FLASH_ADDR := 0x08010000
+BOOT_STATE_FLASH_SIZE := 0x00001000
+APP_SLOT_SIZE := 0x00037000
+APP_SLOT_A_FLASH_ADDR := 0x08011000
+APP_SLOT_B_FLASH_ADDR := 0x08048000
+RAM_LENGTH := 78K
+
+CPU_HZ := 2097000
+SWO_BAUD := 72000
+
+MCU_FLAGS := -mcpu=cortex-m3 -mthumb -mfloat-abi=soft
+BOARD_DEFINES := -DSTM32L152xE
+
+CMSIS_DEVICE_DIR := $(REPO_ROOT)/vendor/cmsis_device_l1
+BOARD_INCLUDES := \
+  -I$(REPO_ROOT)/vendor/cmsis-core/CMSIS/Core/Include \
+  -I$(CMSIS_DEVICE_DIR)/Include
+
+DEVICE_SYSTEM := $(CMSIS_DEVICE_DIR)/Source/Templates/system_stm32l1xx.c
+DEVICE_STARTUP := $(CMSIS_DEVICE_DIR)/Source/Templates/gcc/startup_stm32l152xe.s
+DEVICE_SYSTEM_OBJ := system_stm32l1xx.o
+DEVICE_STARTUP_OBJ := startup_stm32l152xe.o
+
+HAL_IMPL_DIR := $(REPO_ROOT)/shared/hal_impl/stm32l1
+FAULT_IMPL_SRC := $(REPO_ROOT)/shared/fault/fault_stm32l1.c
+BOOT_FLASH_IMPL_SRC := src/boot_flash_stm32l1.c
+PIC_STARTUP_SRC := $(REPO_ROOT)/shared/platform/pic_startup.s
+
+OPENOCD_TARGET := stm32l1
+OPENOCD_TPIU := stm32l1.tpiu

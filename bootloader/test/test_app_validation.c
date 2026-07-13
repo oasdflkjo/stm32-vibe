@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <string.h>
 
-#define TEST_IMAGE_SIZE 0x220U
+#define TEST_IMAGE_SIZE 0x260U
 
 _Alignas(4) static uint8_t test_image[TEST_IMAGE_SIZE];
 
@@ -46,8 +46,14 @@ static void prepare_valid_image(void)
     memset(test_image, 0, sizeof(test_image));
     manifest = test_manifest();
     manifest->magic = APP_MANIFEST_MAGIC;
+    manifest->manifest_version = APP_MANIFEST_VERSION;
+    manifest->manifest_size = APP_MANIFEST_SIZE;
     manifest->image_size = sizeof(test_image);
-    manifest->version = 7U;
+    manifest->software_version = 7U;
+    manifest->hardware_id = 0x152U;
+    manifest->image_flags = 0x01U;
+    manifest->reserved[APP_MANIFEST_APP_ID_WORD] = 0xAAAA5555U;
+    manifest->reserved[APP_MANIFEST_BOARD_ID_WORD] = 0xBBBB6666U;
     manifest->image_crc32 = test_crc32();
 }
 
@@ -98,6 +104,10 @@ void test_accepts_image_with_valid_manifest_and_crc(void)
     TEST_ASSERT_EQUAL(APP_IMAGE_VALID, result.status);
     TEST_ASSERT_EQUAL_UINT32(7U, result.version);
     TEST_ASSERT_EQUAL_UINT32(sizeof(test_image), result.image_size);
+    TEST_ASSERT_EQUAL_HEX32(0x152U, result.hardware_id);
+    TEST_ASSERT_EQUAL_HEX32(0x01U, result.image_flags);
+    TEST_ASSERT_EQUAL_HEX32(0xAAAA5555U, result.app_id);
+    TEST_ASSERT_EQUAL_HEX32(0xBBBB6666U, result.board_id);
     TEST_ASSERT_EQUAL_HEX32(result.expected_crc32, result.calculated_crc32);
 }
 
@@ -107,6 +117,24 @@ void test_rejects_image_with_bad_magic(void)
 
     TEST_ASSERT_EQUAL(
         APP_IMAGE_BAD_MAGIC,
+        app_image_validate(test_image, sizeof(test_image)).status);
+}
+
+void test_rejects_image_with_bad_manifest_version(void)
+{
+    test_manifest()->manifest_version = APP_MANIFEST_VERSION + 1U;
+
+    TEST_ASSERT_EQUAL(
+        APP_IMAGE_BAD_MANIFEST,
+        app_image_validate(test_image, sizeof(test_image)).status);
+}
+
+void test_rejects_image_with_bad_manifest_size(void)
+{
+    test_manifest()->manifest_size = APP_MANIFEST_SIZE - 4U;
+
+    TEST_ASSERT_EQUAL(
+        APP_IMAGE_BAD_MANIFEST,
         app_image_validate(test_image, sizeof(test_image)).status);
 }
 
@@ -145,6 +173,8 @@ int main(void)
     RUN_TEST(test_rejects_reset_handler_without_thumb_bit);
     RUN_TEST(test_accepts_image_with_valid_manifest_and_crc);
     RUN_TEST(test_rejects_image_with_bad_magic);
+    RUN_TEST(test_rejects_image_with_bad_manifest_version);
+    RUN_TEST(test_rejects_image_with_bad_manifest_size);
     RUN_TEST(test_rejects_image_with_invalid_size);
     RUN_TEST(test_rejects_buffer_too_short_for_manifest);
     RUN_TEST(test_rejects_corrupted_image);

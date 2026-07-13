@@ -1,41 +1,88 @@
 # stm32-vibe
 
-STM32 development monorepo for the ST NUCLEO-L152RE. Minimal toolset, container-based builds, LLM-assisted development.
+An MVP STM32 platform architecture with bootloader-managed A/B application
+images and firmware updates over classic CAN. It also includes UART updates,
+compact SWO tracing, fault diagnostics, watchdog recovery, and host-side unit
+tests. The platform can be built for the ST NUCLEO-L152RE and NUCLEO-F446RE.
+
+## Status and Intent
+
+This repository is a reference architecture and starting point, not a finished
+production platform. It was developed entirely with Codex, including the
+firmware, host tools, tests, and documentation. Copying it unchanged into a
+product is not advised. Use it to study the architecture, reuse ideas, and
+identify the validation work required for a specific device and safety model.
+
+The CAN update path has been exercised manually end to end on real hardware:
+the running application entered update mode, the bootloader programmed the
+inactive application slot, the new image was validated and activated, and the
+confirmed image survived a subsequent reset. Host-side C and Python tests cover
+the transport-independent logic and tooling.
+
+The major missing piece is an automated hardware-in-the-loop (HIL) test runner.
+It should provision boards, execute updates and interrupted-update scenarios,
+control power and reset, inspect CAN traffic and persistent boot state, and
+publish reproducible results. Until that exists, hardware behavior is supported
+by a manual validation result rather than continuous evidence.
+
+Generated code is cheap; trustworthy behavior is not. For this kind of system,
+repeatable validation, fault injection, recovery testing, and traceable results
+matter more than the amount of code produced.
 
 ## Hardware
 
-- Board: ST NUCLEO-L152RE
-- MCU: STM32L152RE
-- User LED: LD2, green (PA5 / Arduino D13)
+- Initial bring-up board: ST NUCLEO-L152RE (`BOARD=nucleo-l152re`)
+- CAN update target: ST NUCLEO-F446RE (`BOARD=nucleo-f446re`)
+- User LED: LD2, green (PA5 / Arduino D13 on the current app)
+- CAN shield: Waveshare RS485 CAN Shield, CAN1 on PB8 (RX) and PB9 (TX)
+- Tested host adapter: Waveshare USB-CAN-A at 500 kbit/s
+
+The L152RE was used first to build and test the platform structure while the
+CAN-capable hardware was not yet available. The same architecture was then
+ported to the F446RE, whose native CAN controller is used for the working CAN
+firmware-update path. Both boards remain build targets; CAN support is specific
+to the F446RE configuration.
 
 ## Project Layout
 
 ```text
 .
 ├── Containerfile          # Build environment (Fedora + arm-none-eabi + gcc)
-├── config.mk              # Shared CPU and SWO clock configuration
+├── config.mk              # Board selection and shared project settings
+├── boards/                # Board-specific build configuration
 ├── Makefile               # Top-level orchestrator
-├── bootloader/            # Bootloader (0x08000000, 16KB)
+├── bootloader/            # Board-specific bootloader and update runtime
 │   ├── src/
+│   ├── test/
 │   ├── linker.ld
 │   └── Makefile
 ├── apps/
-│   └── vibe/              # Main application (0x08004000, 496KB)
+│   └── vibe/              # Relocatable reference application
 │       ├── src/
 │       │   ├── main.c
 │       │   ├── led_task.c / .h
 │       ├── test/
-│       │   └── test_led_task.c
+│       │   ├── test_led_task.c
+│       │   ├── test_trace.c
+│       │   ├── test_fault_report.c
+│       │   ├── test_watchdog.c
+│       │   ├── test_can.c
+│       │   ├── test_update_protocol.c
+│       │   └── test_update_stream.c
 │       ├── linker.ld
 │       └── Makefile
 ├── shared/
-│   ├── hal/               # HAL interfaces (gpio.h, systick.h, itm.h)
+│   ├── fault/             # Shared Cortex-M fault reporting
+│   ├── hal/               # HAL interfaces (gpio, systick, itm, watchdog, can)
 │   ├── image/             # Shared application image format
 │   ├── libc/              # Shared no-heap newlib syscall stubs
+│   ├── trace/             # Compact SWO trace encoder
+│   ├── update/            # Transport-neutral firmware update protocol
 │   └── hal_impl/
-│       ├── stm32l1/       # Real hardware implementations
+│       ├── stm32l1/       # STM32L1 hardware implementations
+│       ├── stm32f4/       # STM32F4 hardware implementations, including CAN1
 │       └── mock/          # Mock implementations for unit tests
-├── tools/                 # Trace map extraction and host-side decoding
+├── tools/                 # Image finalization, trace maps, and host decoding
 ├── vendor/
 │   ├── cmsis-core/
 │   ├── cmsis_device_l1/
@@ -49,17 +96,37 @@ STM32 development monorepo for the ST NUCLEO-L152RE. Minimal toolset, container-
 
 ## Flash Layout
 
-| Region      | Start        | Size   |
-|-------------|--------------|--------|
-| Bootloader  | `0x08000000` | 16 KB  |
-| App (vibe)  | `0x08004000` | 496 KB |
+NUCLEO-L152RE:
 
-The bootloader validates the app manifest, CRC, stack pointer, and reset vector
-at `0x08004000` before jumping to it.
+| Region         | Start        | Size   |
+|----------------|--------------|--------|
+| Bootloader     | `0x08000000` | 64 KB  |
+| Boot state     | `0x08010000` | 4 KB   |
+| App slot A     | `0x08011000` | 220 KB |
+| App slot B     | `0x08048000` | 220 KB |
+| Reserved flash | `0x0807F000` | 4 KB   |
+
+NUCLEO-F446RE (sector-aligned A/B layout):
+
+| Region              | Start        | Size   |
+|---------------------|--------------|--------|
+| Bootloader          | `0x08000000` | 32 KB  |
+| Boot state copies   | `0x08008000` | 32 KB  |
+| Reserved sector 4   | `0x08010000` | 64 KB  |
+| App slot A, sector 5| `0x08020000` | 128 KB |
+| App slot B, sector 6| `0x08040000` | 128 KB |
+| Reserved sector 7   | `0x08060000` | 128 KB |
+
+The bootloader validates the selected app slot manifest, CRC, stack pointer, and
+reset vector before jumping to it. If no boot-state record exists, both slots are
+treated as empty and the bootloader stays in update mode until the first image
+is downloaded.
 
 ## Developer Workflow
 
-The only required host tool is `podman` (or `docker`). No ARM toolchain installation needed.
+Firmware builds run in a container, so the host does not need an ARM toolchain.
+Use `podman` or `docker` for firmware builds; unit tests additionally use host
+`gcc` and `python3`.
 
 Clone with submodules:
 
@@ -80,6 +147,123 @@ make
 ```sh
 make APP=my_app
 make test APP=my_app
+```
+
+The default board is `nucleo-l152re`. Board selection is wired through
+`BOARD=<name>`:
+
+```sh
+make BOARD=nucleo-l152re
+```
+
+Build the CAN-capable target with `BOARD=nucleo-f446re`:
+
+```sh
+make -C bootloader firmware BOARD=nucleo-f446re
+make -C apps/vibe firmware BOARD=nucleo-f446re BUILD_DIR=build/f446
+```
+
+Build the canonical relocatable application image. The same finalized bytes are
+installed in either slot; application developers do not select a slot:
+
+```sh
+make firmware
+# or directly:
+make -C apps/vibe firmware
+```
+
+Build one ST-LINK-flashable image containing the bootloader, slot-A app, and
+slot-B app:
+
+```sh
+make combined-slots
+```
+
+Build and flash it in one step. This uses the faster segmented binary flash path
+instead of writing the padded combined image, writes a confirmed slot-A boot-state
+record, and resets the target after flashing:
+
+```sh
+make flash-combined-slots
+```
+
+The generated `build/combined-slots.bin` can also be flashed as a single file,
+but it includes padding between slot A and slot B and does not install a
+boot-state record:
+
+```sh
+st-flash --reset write build/combined-slots.bin 0x08000000
+```
+
+Send the canonical image to the inactive slot over the bootloader UART update
+path:
+
+```sh
+python3 tools/uart_update.py \
+  --port /dev/ttyACM0 \
+  --bin apps/vibe/build/vibe.bin \
+  --metadata apps/vibe/build/vibe.json \
+  --app-name vibe \
+  --board-name "ST NUCLEO-L152RE"
+```
+
+For a board that only has the bootloader flashed, the first update targets slot
+A. Use the same canonical artifact (`apps/vibe/build/vibe.bin` and
+`apps/vibe/build/vibe.json`) for that provisioning update.
+
+Install `pyserial` on the host if the `serial` module is missing:
+
+```sh
+python3 -m pip install pyserial
+```
+
+The updater opens a small terminal UI when stdout is interactive. It shows
+connection state, transfer progress, and updater logs. Use `--no-tui` for plain
+line logs or `--tui` to force the terminal UI.
+
+The running app listens for an `ENTER_UPDATE` packet, ACKs it, and requests a
+system reset. The updater then waits for the bootloader `DISCOVER` ACK before
+streaming the candidate image. At `BEGIN`, the bootloader chooses the inactive
+slot from boot state: slot B when slot A is active, slot A when slot B is active,
+or slot A when no app has been confirmed yet. UART packets are paced by default
+for the current polling receiver (`--byte-delay`, `--app-reset-byte-delay`).
+After `ACTIVATE`, the
+bootloader ACKs the command, records the target slot as pending, drains UART TX,
+and requests a device reset; no manual reset is required for the update handoff.
+
+### CAN Update
+
+The CAN transport uses request ID `0x600 + node_id` and response ID
+`0x680 + node_id`; the default node ID is 1. Protocol packets are fragmented
+into fixed-DLC-8 classic-CAN frames and reassembled before the shared update
+session handles them.
+
+After adding your user to `dialout`, start a new login session so the group is
+active. For the current shell, `sg dialout -c '<command>'` also works. Run an
+F446 update through the USB-CAN-A with:
+
+```sh
+python3 tools/can_update.py \
+  --port /dev/ttyUSB0 \
+  --bitrate 500000 \
+  --node-id 1 \
+  --bin apps/vibe/build/f446/vibe.bin \
+  --metadata apps/vibe/build/f446/vibe.json \
+  --app-name vibe \
+  --board-name "ST NUCLEO-F446RE"
+```
+
+The app ACKs `ENTER_UPDATE`, requests a software reset, and the bootloader
+continues the transfer into the inactive slot. The bootloader services the
+independent watchdog throughout update mode. bxCAN transmit FIFO priority is
+enabled so fragmented packets retain their wire order.
+
+Listen to raw CAN traffic or run the heartbeat smoke image with:
+
+```sh
+make -C apps/vibe firmware-can-smoke BOARD=nucleo-f446re
+python3 tools/waveshare_usb_can.py \
+  --port /dev/ttyUSB0 --bitrate 500000 --count 5
 ```
 
 Run unit tests (host `gcc`, no cross-compilation needed):
@@ -104,8 +288,12 @@ Build outputs:
 
 ```text
 build/combined.hex              ← bootloader + app merged, ready to flash
+build/combined-slots.hex        ← bootloader + slot A + slot B
+build/combined-slots.bin        ← binary form for faster ST-LINK flashing
 bootloader/build/bootloader.elf / .bin / trace_map.json
-apps/vibe/build/vibe.elf / .bin
+apps/vibe/build/vibe.elf / .bin / trace_map.json
+apps/vibe/build/vibe.json
+apps/vibe/build/slot-b/vibe.elf / .bin / trace_map.json / vibe.json
 apps/vibe/build/swo/vibe.elf / .bin / trace_map.json
 ```
 
@@ -113,18 +301,46 @@ apps/vibe/build/swo/vibe.elf / .bin / trace_map.json
 
 App logic is separated from hardware via HAL interfaces in `shared/hal/`. Tests
 compile against `shared/hal_impl/mock/` using the host `gcc`, with no
-cross-compiler or hardware needed. Bootloader image, CRC, and vector validation
-are also tested as hardware-independent modules.
+cross-compiler or hardware needed. Current coverage includes the app LED task,
+trace framing, fault-report formatting, watchdog register programming, CAN mock
+behavior, firmware-update packet encoding/decoding, byte-stream packet
+extraction, bootloader image validation, CRC checks, vector validation, and the
+Python trace tooling.
 
 ```sh
 make test          # build and run all tests
 ```
 
-Adding a test: create `apps/<name>/test/test_<module>.c`, link it against mock HAL + Unity in the app's `Makefile`. See `apps/vibe/test/test_led_task.c` as an example.
+Adding a test: create `apps/<name>/test/test_<module>.c`, link it against mock
+HAL + Unity in the app's `Makefile`. See `apps/vibe/test/test_led_task.c`,
+`apps/vibe/test/test_trace.c`, and `apps/vibe/test/test_fault_report.c` for
+examples of task, trace, and diagnostic tests.
 
 ## Flashing
 
-Flash both bootloader and app in one shot (requires `st-flash` on host):
+For firmware-update testing, flash bootloader, confirmed slot-A boot state, slot
+A, and slot B in one shot (requires `st-flash` on host):
+
+```sh
+make flash-combined-slots
+```
+
+Pass `BOARD=nucleo-f446re` to build and flash the F446 sector layout:
+
+```sh
+make flash-combined-slots BOARD=nucleo-f446re
+```
+
+To test first provisioning, mass-erase the target and flash only the bootloader:
+
+```sh
+make flash-bootloader-only
+```
+
+The bootloader will stay in update mode because both app slots and boot-state
+records are absent.
+
+The older combined target flashes only the bootloader and slot-A app:
 
 ```sh
 make flash
@@ -134,7 +350,15 @@ Flash individually:
 
 ```sh
 make flash-bootloader     # st-flash to 0x08000000
-make flash-app            # st-flash to 0x08004000
+make flash-app            # st-flash to slot A at 0x08011000
+```
+
+Hardware diagnostic images are also available:
+
+```sh
+make flash-swo            # traced normal app
+make flash-fault-test     # traced app that triggers a UsageFault
+make flash-watchdog-test  # traced app that waits for watchdog reset
 ```
 
 The bootloader validates the complete application image and its vectors before
@@ -145,15 +369,20 @@ diagnosis.
 
 ## Application Image Manifest
 
-Every application contains a 16-byte manifest at offset `0x200` from its flash
-base. It records a magic value, the exact image size, a CRC-32, and the
-application version from `APP_VERSION` in `config.mk`.
+Every application contains a 64-byte manifest at offset `0x200` from its flash
+base. It records a magic value, manifest format version, manifest size, exact
+image size, CRC-32, software version from `APP_VERSION` in `config.mk`,
+hardware compatibility ID, image flags, application ID, board ID, and reserved
+words for future metadata. The IDs are CRC-32 values derived from the stamped
+application and board names.
 
 After linking, `tools/finalize_image.py` creates the raw binary, calculates its
-CRC with the manifest CRC field treated as zero, and patches the same manifest
-into both the ELF and binary. The bootloader checks this manifest and CRC before
-it validates the vector table or runs any application code. Its SWO trace
-reports the accepted version and size, or the rejection reason and CRC values.
+CRC with the manifest CRC field treated as zero, patches the same manifest into
+both the ELF and binary, and emits a JSON sidecar with display metadata such as
+`application_name`, `board_name`, IDs, version, size, and CRC. The bootloader
+checks this manifest and CRC before it validates the vector table or runs any
+application code. Its SWO trace reports the accepted version and size, or the
+rejection reason and CRC values.
 
 This catches incomplete flashing, corruption, an erased application, and
 images linked for an incompatible layout. It is integrity checking, not secure
@@ -360,6 +589,11 @@ GitHub Actions runs on every push to `main` and on pull requests. Two steps run 
 2. **Run unit tests** — compiles tests with host `gcc` + mock HAL, runs them
 
 The container image is rebuilt and pushed to GHCR automatically when `Containerfile` changes. Trigger a manual rebuild from the Actions tab → "Publish build image".
+
+CI currently validates compilation and host-side tests only. It does not
+control a physical STM32 target, CAN adapter, reset line, or power supply. A
+passing CI run therefore does not replace the missing HIL test runner described
+above.
 
 ## Adding a New App
 
