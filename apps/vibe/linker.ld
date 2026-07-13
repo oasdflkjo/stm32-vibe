@@ -2,6 +2,7 @@ ENTRY(Reset_Handler)
 
 APP_FLASH_ORIGIN = 0;
 APP_FLASH_LENGTH = DEFINED(APP_FLASH_LENGTH) ? APP_FLASH_LENGTH : 220K;
+RAM_LENGTH_VALUE = DEFINED(RAM_LENGTH) ? RAM_LENGTH : 78K;
 
 _estack = ORIGIN(RAM) + LENGTH(RAM);
 _Min_Stack_Size = 0x400;
@@ -10,7 +11,7 @@ MEMORY
 {
   FLASH (rx)  : ORIGIN = APP_FLASH_ORIGIN, LENGTH = APP_FLASH_LENGTH
   /* Top 2 KiB is shared runtime RAM: GOT, vectors, handoff, update marker. */
-  RAM   (xrw) : ORIGIN = 0x20000000, LENGTH = 78K
+  RAM   (xrw) : ORIGIN = 0x20000000, LENGTH = RAM_LENGTH_VALUE
 }
 
 PHDRS

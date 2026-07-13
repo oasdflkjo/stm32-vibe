@@ -30,4 +30,5 @@ typedef struct {
 can_result_t can_init(uint32_t bitrate);
 can_result_t can_send(const can_frame_t *frame);
 can_result_t can_receive(can_frame_t *frame);
+can_result_t can_drain_tx(void);
 can_status_t can_get_status(void);

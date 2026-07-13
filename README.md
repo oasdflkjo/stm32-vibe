@@ -1,19 +1,18 @@
 # stm32-vibe
 
-STM32 development monorepo for the ST NUCLEO-L152RE. Minimal toolset,
-container-based builds, bootloader-managed application images, compact SWO
-tracing, fault diagnostics, watchdog recovery, and host-side unit tests.
+STM32 development monorepo for the ST NUCLEO-L152RE and NUCLEO-F446RE.
+Includes bootloader-managed A/B application images, UART and classic-CAN
+firmware updates, compact SWO tracing, fault diagnostics, watchdog recovery,
+and host-side unit tests.
 
 ## Hardware
 
 - Default board: ST NUCLEO-L152RE (`BOARD=nucleo-l152re`)
 - Default MCU: STM32L152RE
-- Planned CAN board: ST NUCLEO-F446RE (`BOARD=nucleo-f446re`)
+- CAN board: ST NUCLEO-F446RE (`BOARD=nucleo-f446re`)
 - User LED: LD2, green (PA5 / Arduino D13 on the current app)
-
-`nucleo-f446re` is present as board metadata for the CAN shield port, but it
-does not build until STM32F4 vendor sources and hardware implementations are
-added.
+- CAN shield: Waveshare RS485 CAN Shield, CAN1 on PB8 (RX) and PB9 (TX)
+- Tested host adapter: Waveshare USB-CAN-A at 500 kbit/s
 
 ## Project Layout
 
@@ -51,7 +50,8 @@ added.
 │   ├── trace/             # Compact SWO trace encoder
 │   ├── update/            # Transport-neutral firmware update protocol
 │   └── hal_impl/
-│       ├── stm32l1/       # Real hardware implementations
+│       ├── stm32l1/       # STM32L1 hardware implementations
+│       ├── stm32f4/       # STM32F4 hardware implementations, including CAN1
 │       └── mock/          # Mock implementations for unit tests
 ├── tools/                 # Image finalization, trace maps, and host decoding
 ├── vendor/
@@ -67,6 +67,8 @@ added.
 
 ## Flash Layout
 
+NUCLEO-L152RE:
+
 | Region         | Start        | Size   |
 |----------------|--------------|--------|
 | Bootloader     | `0x08000000` | 64 KB  |
@@ -74,6 +76,17 @@ added.
 | App slot A     | `0x08011000` | 220 KB |
 | App slot B     | `0x08048000` | 220 KB |
 | Reserved flash | `0x0807F000` | 4 KB   |
+
+NUCLEO-F446RE (sector-aligned A/B layout):
+
+| Region              | Start        | Size   |
+|---------------------|--------------|--------|
+| Bootloader          | `0x08000000` | 32 KB  |
+| Boot state copies   | `0x08008000` | 32 KB  |
+| Reserved sector 4   | `0x08010000` | 64 KB  |
+| App slot A, sector 5| `0x08020000` | 128 KB |
+| App slot B, sector 6| `0x08040000` | 128 KB |
+| Reserved sector 7   | `0x08060000` | 128 KB |
 
 The bootloader validates the selected app slot manifest, CRC, stack pointer, and
 reset vector before jumping to it. If no boot-state record exists, both slots are
@@ -114,7 +127,12 @@ The default board is `nucleo-l152re`. Board selection is wired through
 make BOARD=nucleo-l152re
 ```
 
-`BOARD=nucleo-f446re` is reserved for the CAN-capable NUCLEO-F446RE port.
+Build the CAN-capable target with `BOARD=nucleo-f446re`:
+
+```sh
+make -C bootloader firmware BOARD=nucleo-f446re
+make -C apps/vibe firmware BOARD=nucleo-f446re BUILD_DIR=build/f446
+```
 
 Build the canonical relocatable application image. The same finalized bytes are
 installed in either slot; application developers do not select a slot:
@@ -184,6 +202,41 @@ After `ACTIVATE`, the
 bootloader ACKs the command, records the target slot as pending, drains UART TX,
 and requests a device reset; no manual reset is required for the update handoff.
 
+### CAN Update
+
+The CAN transport uses request ID `0x600 + node_id` and response ID
+`0x680 + node_id`; the default node ID is 1. Protocol packets are fragmented
+into fixed-DLC-8 classic-CAN frames and reassembled before the shared update
+session handles them.
+
+After adding your user to `dialout`, start a new login session so the group is
+active. For the current shell, `sg dialout -c '<command>'` also works. Run an
+F446 update through the USB-CAN-A with:
+
+```sh
+python3 tools/can_update.py \
+  --port /dev/ttyUSB0 \
+  --bitrate 500000 \
+  --node-id 1 \
+  --bin apps/vibe/build/f446/vibe.bin \
+  --metadata apps/vibe/build/f446/vibe.json \
+  --app-name vibe \
+  --board-name "ST NUCLEO-F446RE"
+```
+
+The app ACKs `ENTER_UPDATE`, requests a software reset, and the bootloader
+continues the transfer into the inactive slot. The bootloader services the
+independent watchdog throughout update mode. bxCAN transmit FIFO priority is
+enabled so fragmented packets retain their wire order.
+
+Listen to raw CAN traffic or run the heartbeat smoke image with:
+
+```sh
+make -C apps/vibe firmware-can-smoke BOARD=nucleo-f446re
+python3 tools/waveshare_usb_can.py \
+  --port /dev/ttyUSB0 --bitrate 500000 --count 5
+```
+
 Run unit tests (host `gcc`, no cross-compilation needed):
 
 ```sh
@@ -241,6 +294,12 @@ A, and slot B in one shot (requires `st-flash` on host):
 
 ```sh
 make flash-combined-slots
+```
+
+Pass `BOARD=nucleo-f446re` to build and flash the F446 sector layout:
+
+```sh
+make flash-combined-slots BOARD=nucleo-f446re
 ```
 
 To test first provisioning, mass-erase the target and flash only the bootloader:

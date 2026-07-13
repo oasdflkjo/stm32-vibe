@@ -11,7 +11,7 @@
 #include "hal/watchdog.h"
 #include "trace/trace.h"
 
-#include "stm32l1xx.h"
+#include "platform/device.h"
 
 #ifdef ENABLE_SWO_TRACE
 #include "hal/itm.h"

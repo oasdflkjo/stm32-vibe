@@ -26,4 +26,11 @@ typedef struct {
 
 void boot_update_loop_init(boot_update_loop_t *loop);
 boot_update_poll_result_t boot_update_loop_poll(boot_update_loop_t *loop);
+update_status_t boot_update_loop_process_encoded(
+    boot_update_loop_t *loop,
+    const uint8_t *encoded,
+    size_t encoded_len,
+    uint8_t *ack,
+    size_t ack_capacity,
+    size_t *ack_len);
 void boot_update_loop_run_forever(boot_update_loop_t *loop);

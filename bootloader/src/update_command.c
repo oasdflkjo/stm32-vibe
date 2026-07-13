@@ -2,15 +2,15 @@
 
 #include "hal/uart.h"
 
-static void send_ack(boot_update_loop_t *loop,
-                     uint8_t command,
-                     update_status_t status,
-                     uint32_t session_id,
-                     uint32_t sequence)
+static update_status_t encode_ack(uint8_t command,
+                                  update_status_t status,
+                                  uint32_t session_id,
+                                  uint32_t sequence,
+                                  uint8_t *encoded,
+                                  size_t encoded_capacity,
+                                  size_t *encoded_len)
 {
     uint8_t payload[] = {command, (uint8_t)status};
-    uint8_t encoded[UPDATE_PROTOCOL_MAX_PACKET_SIZE];
-    size_t encoded_len = 0U;
     update_packet_t ack = {
         .command = UPDATE_CMD_ACK,
         .payload_len = sizeof(payload),
@@ -19,11 +19,52 @@ static void send_ack(boot_update_loop_t *loop,
         .payload = payload,
     };
 
-    if ((update_protocol_encode(&ack, encoded, sizeof(encoded), &encoded_len) !=
-         UPDATE_STATUS_OK) ||
+    return update_protocol_encode(&ack, encoded, encoded_capacity, encoded_len);
+}
+
+static void send_uart_ack(boot_update_loop_t *loop,
+                          uint8_t command,
+                          update_status_t status,
+                          uint32_t session_id,
+                          uint32_t sequence)
+{
+    uint8_t encoded[UPDATE_PROTOCOL_MAX_PACKET_SIZE];
+    size_t encoded_len = 0U;
+
+    if ((encode_ack(command, status, session_id, sequence, encoded,
+                    sizeof(encoded), &encoded_len) != UPDATE_STATUS_OK) ||
         (uart_send(encoded, encoded_len) != UART_RESULT_OK)) {
         loop->tx_errors++;
     }
+}
+
+update_status_t boot_update_loop_process_encoded(
+    boot_update_loop_t *loop,
+    const uint8_t *encoded,
+    size_t encoded_len,
+    uint8_t *ack,
+    size_t ack_capacity,
+    size_t *ack_len)
+{
+    update_packet_t packet = {0};
+    update_status_t decode_status;
+    update_status_t command_status;
+
+    if ((loop == 0) || (encoded == 0) || (ack == 0) || (ack_len == 0)) {
+        return UPDATE_STATUS_INVALID_ARGUMENT;
+    }
+    decode_status = update_protocol_decode(encoded, encoded_len, &packet,
+                                            loop->payload,
+                                            sizeof(loop->payload));
+    if (decode_status != UPDATE_STATUS_OK) {
+        loop->parse_errors++;
+        return encode_ack(0U, decode_status, 0U, 0U, ack, ack_capacity,
+                          ack_len);
+    }
+    command_status = boot_update_session_process(&loop->session, &packet);
+    loop->packets_received++;
+    return encode_ack(packet.command, command_status, packet.session_id,
+                      packet.sequence, ack, ack_capacity, ack_len);
 }
 
 void boot_update_loop_init(boot_update_loop_t *loop)
@@ -66,12 +107,12 @@ boot_update_poll_result_t boot_update_loop_poll(boot_update_loop_t *loop)
                 boot_update_session_process(&loop->session, &packet);
             loop->packets_received++;
             result.packets_received++;
-            send_ack(loop, packet.command, ack_status, packet.session_id,
-                     packet.sequence);
+            send_uart_ack(loop, packet.command, ack_status, packet.session_id,
+                          packet.sequence);
         } else if (status != UPDATE_STATUS_BAD_LENGTH) {
             loop->parse_errors++;
             result.parse_errors++;
-            send_ack(loop, 0U, status, 0U, 0U);
+            send_uart_ack(loop, 0U, status, 0U, 0U);
         }
     }
 

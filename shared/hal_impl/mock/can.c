@@ -106,6 +106,14 @@ can_result_t can_receive(can_frame_t *frame)
     return result;
 }
 
+can_result_t can_drain_tx(void)
+{
+    if (status.bus_off != 0U) {
+        return CAN_RESULT_BUS_OFF;
+    }
+    return status.initialized != 0U ? CAN_RESULT_OK : CAN_RESULT_NOT_READY;
+}
+
 can_status_t can_get_status(void)
 {
     return status;

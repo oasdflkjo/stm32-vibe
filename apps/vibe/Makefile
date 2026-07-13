@@ -38,7 +38,7 @@ $(error Unknown APP_SLOT '$(APP_SLOT)'; expected A or B)
 endif
 APP_FLASH_SIZE := $(APP_SLOT_SIZE)
 
-DEFINES   := $(BOARD_DEFINES) -DTRACE_SWO_BAUD=$(SWO_BAUD)U -DWATCHDOG_TIMEOUT_MS=$(WATCHDOG_TIMEOUT_MS)U -DBOOT_CONFIRM_STABILIZATION_MS=$(BOOT_CONFIRM_STABILIZATION_MS)U
+DEFINES   := $(BOARD_DEFINES) -DTRACE_SWO_BAUD=$(SWO_BAUD)U -DWATCHDOG_TIMEOUT_MS=$(WATCHDOG_TIMEOUT_MS)U -DBOOT_CONFIRM_STABILIZATION_MS=$(BOOT_CONFIRM_STABILIZATION_MS)U $(EXTRA_DEFINES)
 INCLUDES  := \
   -Isrc \
   -I$(SHARED) \
@@ -46,7 +46,7 @@ INCLUDES  := \
 
 CFLAGS  := $(MCU_FLAGS) $(DEFINES) $(INCLUDES) -std=c11 -Wall -Wextra -Werror -Os -g3 -ffunction-sections -fdata-sections -fpic -msingle-pic-base -mpic-register=r9 -mno-pic-data-is-text-relative
 ASFLAGS := $(MCU_FLAGS) -g3
-LDFLAGS := $(MCU_FLAGS) -Tlinker.ld -Wl,--defsym=APP_FLASH_LENGTH=$(APP_FLASH_SIZE) -Wl,--no-relax -Wl,--gc-sections -Wl,-Map=$(BUILD_DIR)/$(PROJECT).map --specs=nano.specs --specs=nosys.specs
+LDFLAGS := $(MCU_FLAGS) -Tlinker.ld -Wl,--defsym=APP_FLASH_LENGTH=$(APP_FLASH_SIZE) -Wl,--defsym=RAM_LENGTH=$(RAM_LENGTH) -Wl,--no-relax -Wl,--gc-sections -Wl,-Map=$(BUILD_DIR)/$(PROJECT).map --specs=nano.specs --specs=nosys.specs
 
 APP_LOCAL_SRCS := \
   src/app.c \
@@ -55,7 +55,7 @@ APP_LOCAL_SRCS := \
 
 HAL_SRCS := \
   $(SHARED)/platform/runtime.c \
-  $(SHARED)/platform/pic_startup.s \
+  $(PIC_STARTUP_SRC) \
   $(SHARED)/platform/boot_confirmation.c \
   $(SHARED)/platform/boot_confirmation_store.c \
   $(SHARED)/platform/boot_info.c \
@@ -73,12 +73,16 @@ HAL_SRCS := \
   $(HAL_IMPL_DIR)/itm.c \
   $(HAL_IMPL_DIR)/uart.c \
   $(HAL_IMPL_DIR)/watchdog.c \
+  $(CAN_IMPL_SRC) \
   $(SHARED)/trace/trace.c \
   $(SHARED)/update/update_protocol.c \
-  $(SHARED)/update/update_stream.c
+  $(SHARED)/update/update_stream.c \
+  $(SHARED)/update/update_can.c
 
 LOCAL_OBJS := $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(APP_LOCAL_SRCS))
-HAL_OBJS   := $(patsubst $(SHARED)/%.c,$(BUILD_DIR)/shared/%.o,$(HAL_SRCS))
+HAL_C_OBJS := $(patsubst $(SHARED)/%.c,$(BUILD_DIR)/shared/%.o,$(filter %.c,$(HAL_SRCS)))
+HAL_S_OBJS := $(patsubst $(SHARED)/%.s,$(BUILD_DIR)/shared/%.o,$(filter %.s,$(HAL_SRCS)))
+HAL_OBJS   := $(HAL_C_OBJS) $(HAL_S_OBJS)
 
 OBJS := \
   $(LOCAL_OBJS) \
@@ -90,12 +94,15 @@ ELF := $(BUILD_DIR)/$(PROJECT).elf
 BIN := $(BUILD_DIR)/$(PROJECT).bin
 METADATA := $(BUILD_DIR)/$(PROJECT).json
 
-.PHONY: firmware firmware-slot-b test clean size flash flash-slot-b flash-swo flash-fault-test flash-watchdog-test probe reset erase debug-server gdb swo-trace
+.PHONY: firmware firmware-slot-b firmware-can-smoke test clean size flash flash-slot-b flash-swo flash-fault-test flash-watchdog-test probe reset erase debug-server gdb swo-trace
 
 firmware: $(ELF) $(BIN) $(TRACE_MAP) size
 
 firmware-slot-b:
 	$(MAKE) firmware APP_SLOT=B BUILD_DIR=build/slot-b
+
+firmware-can-smoke:
+	$(MAKE) firmware BUILD_DIR=build/can-smoke EXTRA_DEFINES=-DENABLE_CAN_SMOKE_TEST
 
 # ── Unit tests (host gcc, mock HAL) ──────────────────────────────────────────
 UNITY := $(REPO_ROOT)/vendor/unity/src
@@ -171,6 +178,11 @@ TEST_UPDATE_AGENT_SRCS := \
   $(SHARED)/update/update_stream.c \
   $(UNITY)/unity.c
 
+TEST_UPDATE_CAN_SRCS := \
+  test/test_update_can.c \
+  $(SHARED)/update/update_can.c \
+  $(UNITY)/unity.c
+
 TEST_LED_BIN := $(TEST_DIR)/test_led_task
 TEST_APP_BIN := $(TEST_DIR)/test_app
 TEST_HEALTH_BIN := $(TEST_DIR)/test_health_supervisor
@@ -183,10 +195,11 @@ TEST_CAN_BIN := $(TEST_DIR)/test_can
 TEST_UPDATE_PROTOCOL_BIN := $(TEST_DIR)/test_update_protocol
 TEST_UPDATE_STREAM_BIN := $(TEST_DIR)/test_update_stream
 TEST_UPDATE_AGENT_BIN := $(TEST_DIR)/test_update_agent
+TEST_UPDATE_CAN_BIN := $(TEST_DIR)/test_update_can
 
 TEST_CFLAGS := -Isrc -I$(SHARED) -I$(UNITY) -std=c11 -Wall -Wextra -Werror -g
 
-test: $(TEST_LED_BIN) $(TEST_APP_BIN) $(TEST_HEALTH_BIN) $(TEST_BOOT_CONFIRM_BIN) $(TEST_BOOT_INFO_BIN) $(TEST_TRACE_BIN) $(TEST_FAULT_BIN) $(TEST_WATCHDOG_BIN) $(TEST_CAN_BIN) $(TEST_UPDATE_PROTOCOL_BIN) $(TEST_UPDATE_STREAM_BIN) $(TEST_UPDATE_AGENT_BIN)
+test: $(TEST_LED_BIN) $(TEST_APP_BIN) $(TEST_HEALTH_BIN) $(TEST_BOOT_CONFIRM_BIN) $(TEST_BOOT_INFO_BIN) $(TEST_TRACE_BIN) $(TEST_FAULT_BIN) $(TEST_WATCHDOG_BIN) $(TEST_CAN_BIN) $(TEST_UPDATE_PROTOCOL_BIN) $(TEST_UPDATE_STREAM_BIN) $(TEST_UPDATE_AGENT_BIN) $(TEST_UPDATE_CAN_BIN)
 	./$(TEST_LED_BIN)
 	./$(TEST_APP_BIN)
 	./$(TEST_HEALTH_BIN)
@@ -199,7 +212,8 @@ test: $(TEST_LED_BIN) $(TEST_APP_BIN) $(TEST_HEALTH_BIN) $(TEST_BOOT_CONFIRM_BIN
 	./$(TEST_UPDATE_PROTOCOL_BIN)
 	./$(TEST_UPDATE_STREAM_BIN)
 	./$(TEST_UPDATE_AGENT_BIN)
-	cd $(REPO_ROOT) && $(PYTHON) -m unittest tools.test_trace_tools tools.test_finalize_image tools.test_uart_update tools.test_boot_state_image
+	./$(TEST_UPDATE_CAN_BIN)
+	cd $(REPO_ROOT) && $(PYTHON) -m unittest tools.test_trace_tools tools.test_finalize_image tools.test_uart_update tools.test_boot_state_image tools.test_waveshare_usb_can tools.test_can_update
 
 $(TEST_LED_BIN): $(TEST_LED_SRCS) | $(TEST_DIR)
 	gcc $(TEST_CFLAGS) $^ -o $@
@@ -235,6 +249,9 @@ $(TEST_UPDATE_STREAM_BIN): $(TEST_UPDATE_STREAM_SRCS) | $(TEST_DIR)
 	gcc $(TEST_CFLAGS) $^ -o $@
 
 $(TEST_UPDATE_AGENT_BIN): $(TEST_UPDATE_AGENT_SRCS) | $(TEST_DIR)
+	gcc $(TEST_CFLAGS) $^ -o $@
+
+$(TEST_UPDATE_CAN_BIN): $(TEST_UPDATE_CAN_SRCS) | $(TEST_DIR)
 	gcc $(TEST_CFLAGS) $^ -o $@
 
 $(TEST_DIR):

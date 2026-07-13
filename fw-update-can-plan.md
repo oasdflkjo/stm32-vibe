@@ -10,11 +10,9 @@ flash-layout rewrite.
 
 ## Current Baseline
 
-- Bootloader at `0x08000000`, currently reserved as 64 KB.
-- Boot-state storage reserved at `0x08010000`, currently 4 KB.
-- App slot A at `0x08011000`, currently 220 KB.
-- App slot B at `0x08048000`, currently 220 KB.
-- Reserved flash at `0x0807F000`, currently 4 KB.
+- NUCLEO-L152RE retains its 64 KB bootloader and two 220 KB app slots.
+- NUCLEO-F446RE uses sector-aligned regions: 32 KB bootloader, 32 KB boot
+  state, 128 KB slot A at `0x08020000`, and 128 KB slot B at `0x08040000`.
 - Application image has a manifest at offset `0x200`.
 - The manifest stores magic, manifest version, manifest size, image size,
   CRC-32, software version, hardware ID, image flags, and reserved words.
@@ -24,8 +22,8 @@ flash-layout rewrite.
   jumping.
 - Bootloader and app already have compact SWO trace and fault reporting.
 - `BOARD=nucleo-l152re` is the default board today.
-- `BOARD=nucleo-f446re` is reserved for the CAN-capable board port, but still
-  needs STM32F4 vendor sources and `shared/hal_impl/stm32f4/` code.
+- `BOARD=nucleo-f446re` builds with CMSIS Device F4 and the STM32F4 HAL
+  implementations in `shared/hal_impl/stm32f4/`.
 - A transport-neutral update packet layer exists in `shared/update/`.
 - The update stream parser can extract CRC-checked packets from arbitrary byte
   streams, so UART bring-up can reuse the same protocol before CAN hardware
@@ -86,8 +84,33 @@ The branch is ready to continue from a clean protocol foundation:
   continue with the bootloader.
 - The bootloader probes UART briefly at reset before jumping a valid app, so the
   host updater can catch the bootloader after the app-requested reset.
-- CAN transport should later fragment the same protocol packets into classic
-  CAN frames.
+- CAN fragments the same protocol packets into fixed-DLC-8 classic-CAN frames.
+- `tools/can_update.py` drives the complete update through a Waveshare
+  USB-CAN-A at 500 kbit/s.
+
+## Hardware-Verified Checkpoint
+
+The NUCLEO-F446RE path was verified end to end with a Waveshare RS485 CAN
+Shield and USB-CAN-A:
+
+- CAN1 PB8/PB9 raw heartbeat and bidirectional echo passed at 500 kbit/s.
+- The running app accepted `ENTER_UPDATE` over CAN and reset without a manual
+  reset-button action.
+- The bootloader erased inactive slot B, transferred 5,240 bytes, validated
+  the finalized image, marked it pending, and activated it.
+- The slot-B app confirmed itself after its stabilization interval and remained
+  active after a subsequent ST-Link reset.
+- Boot-state generation 3 recorded slot B as active and confirmed.
+
+Hardware validation exposed and fixed three transport requirements:
+
+- The bootloader must initialize and refresh IWDG because the independent
+  watchdog remains active across the app's software reset.
+- bxCAN must use transmit FIFO priority (`TXFP`) so fragments queued through
+  three hardware mailboxes cannot arrive as `0, 1, 3, 2`.
+- USB-CAN-A configuration byte 14 must be zero to keep automatic CAN
+  retransmission enabled. Its documented silent and loopback mode values are
+  also now used.
 
 ## First Architecture Decisions
 

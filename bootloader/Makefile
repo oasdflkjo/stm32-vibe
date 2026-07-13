@@ -23,23 +23,25 @@ DEFINES   := \
   $(BOARD_DEFINES) \
   -DENABLE_SWO_TRACE \
   -DTRACE_ID_BASE=0x8000U \
-  -DTRACE_SWO_BAUD=$(SWO_BAUD)U
+  -DTRACE_SWO_BAUD=$(SWO_BAUD)U \
+  -DWATCHDOG_TIMEOUT_MS=$(WATCHDOG_TIMEOUT_MS)U
 INCLUDES  := \
   -I$(SHARED) \
   $(BOARD_INCLUDES)
 
 CFLAGS  := $(MCU_FLAGS) $(DEFINES) $(INCLUDES) -std=c11 -Wall -Wextra -Werror -Os -g3 -ffunction-sections -fdata-sections
 ASFLAGS := $(MCU_FLAGS) -g3
-LDFLAGS := $(MCU_FLAGS) -Tlinker.ld -Wl,--gc-sections -Wl,-Map=$(BUILD_DIR)/$(PROJECT).map --specs=nano.specs --specs=nosys.specs
+LDFLAGS := $(MCU_FLAGS) -Tlinker.ld -Wl,--defsym=RAM_LENGTH=$(RAM_LENGTH) -Wl,--defsym=BOOT_FLASH_LENGTH=$(BOOTLOADER_FLASH_SIZE) -Wl,--gc-sections -Wl,-Map=$(BUILD_DIR)/$(PROJECT).map --specs=nano.specs --specs=nosys.specs
 
 SRCS := \
   src/main.c \
   src/app_image.c \
   src/app_validation.c \
-  src/boot_flash_stm32l1.c \
+  $(BOOT_FLASH_IMPL_SRC) \
   src/boot_policy.c \
   src/update_session.c \
-  src/update_command.c
+  src/update_command.c \
+  $(BOOT_CAN_SRC)
 
 SHARED_SRCS := \
   $(SHARED)/boot/boot_state.c \
@@ -51,9 +53,12 @@ SHARED_SRCS := \
   $(HAL_IMPL_DIR)/critical.c \
   $(HAL_IMPL_DIR)/itm.c \
   $(HAL_IMPL_DIR)/uart.c \
+  $(HAL_IMPL_DIR)/watchdog.c \
+  $(CAN_IMPL_SRC) \
   $(SHARED)/trace/trace.c \
   $(SHARED)/update/update_protocol.c \
-  $(SHARED)/update/update_stream.c
+  $(SHARED)/update/update_stream.c \
+  $(SHARED)/update/update_can.c
 
 OBJS := \
   $(patsubst src/%,$(BUILD_DIR)/%,$(SRCS:.c=.o)) \

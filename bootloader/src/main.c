@@ -9,9 +9,13 @@
 #include "fault/fault.h"
 #include "hal/itm.h"
 #include "hal/uart.h"
+#include "hal/watchdog.h"
 #include "trace/trace.h"
 #include "update_command.h"
-#include "stm32l1xx.h"
+#ifdef BOARD_HAS_CAN
+#include "update_can_loop.h"
+#endif
+#include "platform/device.h"
 
 __attribute__((naked, noreturn))
 static void start_app(uint32_t stack_pointer, uint32_t reset_handler,
@@ -70,12 +74,25 @@ static int prepare_relocatable_runtime(uint32_t image_base,
         (uint32_t *)BOOT_RUNTIME_GOT_ADDR, BOOT_RUNTIME_GOT_WORDS);
 }
 
-static void run_update_loop_forever(boot_update_loop_t *update_loop)
+static void run_update_loop_forever(
+    boot_update_loop_t *update_loop
+#ifdef BOARD_HAS_CAN
+    , boot_can_update_loop_t *can_loop
+#endif
+)
 {
     while (1) {
+        watchdog_refresh();
         (void)boot_update_loop_poll(update_loop);
+#ifdef BOARD_HAS_CAN
+        (void)boot_can_update_loop_poll(can_loop, update_loop);
+#endif
+        watchdog_refresh();
         if (update_loop->session.reset_requested != 0U) {
             (void)uart_drain_tx();
+#ifdef BOARD_HAS_CAN
+            (void)can_drain_tx();
+#endif
             NVIC_SystemReset();
         }
     }
@@ -84,13 +101,40 @@ static void run_update_loop_forever(boot_update_loop_t *update_loop)
 static void enter_update_mode(void)
 {
     boot_update_loop_t update_loop;
+    int uart_ready;
+#ifdef BOARD_HAS_CAN
+    boot_can_update_loop_t can_loop = {0};
+    int can_ready;
+#endif
 
-    if (uart_init(BOOT_UPDATE_UART_BAUD) == UART_RESULT_OK) {
-        TRACE("BOOT update uart ready baud=%u", BOOT_UPDATE_UART_BAUD);
-        boot_update_loop_init(&update_loop);
-        run_update_loop_forever(&update_loop);
+    boot_update_loop_init(&update_loop);
+    watchdog_refresh();
+    uart_ready = uart_init(BOOT_UPDATE_UART_BAUD) == UART_RESULT_OK;
+#ifdef BOARD_HAS_CAN
+    can_ready = boot_can_update_loop_init(&can_loop, UPDATE_CAN_NODE_ID,
+                                          500000U);
+#endif
+    if (uart_ready
+#ifdef BOARD_HAS_CAN
+        || can_ready
+#endif
+    ) {
+        if (uart_ready) {
+            TRACE("BOOT update uart ready baud=%u", BOOT_UPDATE_UART_BAUD);
+        }
+#ifdef BOARD_HAS_CAN
+        if (can_ready) {
+            TRACE("BOOT update can ready node=%u", UPDATE_CAN_NODE_ID);
+        }
+#endif
+        run_update_loop_forever(
+            &update_loop
+#ifdef BOARD_HAS_CAN
+            , &can_loop
+#endif
+        );
     }
-    TRACE("BOOT update uart init failed");
+    TRACE("BOOT update transport init failed");
     while (1) {
     }
 }
@@ -120,19 +164,45 @@ static void prepare_boot_handoff(const boot_candidate_t *candidate,
 static void probe_update_mode(void)
 {
     boot_update_loop_t update_loop;
+    int uart_ready;
+#ifdef BOARD_HAS_CAN
+    boot_can_update_loop_t can_loop = {0};
+    int can_ready;
+#endif
 
-    if (uart_init(BOOT_UPDATE_UART_BAUD) != UART_RESULT_OK) {
+    uart_ready = uart_init(BOOT_UPDATE_UART_BAUD) == UART_RESULT_OK;
+#ifdef BOARD_HAS_CAN
+    can_ready = boot_can_update_loop_init(&can_loop, UPDATE_CAN_NODE_ID,
+                                          500000U);
+#endif
+    if (!uart_ready
+#ifdef BOARD_HAS_CAN
+        && !can_ready
+#endif
+    ) {
         return;
     }
 
     boot_update_loop_init(&update_loop);
     for (uint32_t poll = 0U; poll < BOOT_UPDATE_PROBE_POLLS; poll++) {
+        watchdog_refresh();
         boot_update_poll_result_t result = boot_update_loop_poll(&update_loop);
+        uint32_t can_frames = 0U;
+#ifdef BOARD_HAS_CAN
+        if (can_ready) {
+            can_frames = boot_can_update_loop_poll(&can_loop, &update_loop);
+        }
+#endif
         if ((result.bytes_received != 0U) || (result.packets_received != 0U) ||
-            (result.parse_errors != 0U)) {
+            (result.parse_errors != 0U) || (can_frames != 0U)) {
             TRACE("BOOT update probe hit bytes=%u packets=%u",
                   result.bytes_received, result.packets_received);
-            run_update_loop_forever(&update_loop);
+            run_update_loop_forever(
+                &update_loop
+#ifdef BOARD_HAS_CAN
+                , &can_loop
+#endif
+            );
         }
     }
 }
@@ -149,6 +219,7 @@ int main(void)
     uint32_t reset_handler;
     const app_manifest_t *manifest;
 
+    (void)watchdog_init(WATCHDOG_TIMEOUT_MS);
     itm_init(SystemCoreClock, TRACE_SWO_BAUD);
     fault_handlers_init();
     TRACE("BOOT reset csr=%08X", reset_cause);

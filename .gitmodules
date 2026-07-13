@@ -13,3 +13,6 @@
 [submodule "vendor/unity"]
 	path = vendor/unity
 	url = https://github.com/ThrowTheSwitch/Unity.git
+[submodule "vendor/cmsis_device_f4"]
+	path = vendor/cmsis_device_f4
+	url = https://github.com/STMicroelectronics/cmsis_device_f4.git
