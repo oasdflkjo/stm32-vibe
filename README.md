@@ -1,18 +1,47 @@
 # stm32-vibe
 
-STM32 development monorepo for the ST NUCLEO-L152RE and NUCLEO-F446RE.
-Includes bootloader-managed A/B application images, UART and classic-CAN
-firmware updates, compact SWO tracing, fault diagnostics, watchdog recovery,
-and host-side unit tests.
+An MVP STM32 platform architecture with bootloader-managed A/B application
+images and firmware updates over classic CAN. It also includes UART updates,
+compact SWO tracing, fault diagnostics, watchdog recovery, and host-side unit
+tests. The platform can be built for the ST NUCLEO-L152RE and NUCLEO-F446RE.
+
+## Status and Intent
+
+This repository is a reference architecture and starting point, not a finished
+production platform. It was developed entirely with Codex, including the
+firmware, host tools, tests, and documentation. Copying it unchanged into a
+product is not advised. Use it to study the architecture, reuse ideas, and
+identify the validation work required for a specific device and safety model.
+
+The CAN update path has been exercised manually end to end on real hardware:
+the running application entered update mode, the bootloader programmed the
+inactive application slot, the new image was validated and activated, and the
+confirmed image survived a subsequent reset. Host-side C and Python tests cover
+the transport-independent logic and tooling.
+
+The major missing piece is an automated hardware-in-the-loop (HIL) test runner.
+It should provision boards, execute updates and interrupted-update scenarios,
+control power and reset, inspect CAN traffic and persistent boot state, and
+publish reproducible results. Until that exists, hardware behavior is supported
+by a manual validation result rather than continuous evidence.
+
+Generated code is cheap; trustworthy behavior is not. For this kind of system,
+repeatable validation, fault injection, recovery testing, and traceable results
+matter more than the amount of code produced.
 
 ## Hardware
 
-- Default board: ST NUCLEO-L152RE (`BOARD=nucleo-l152re`)
-- Default MCU: STM32L152RE
-- CAN board: ST NUCLEO-F446RE (`BOARD=nucleo-f446re`)
+- Initial bring-up board: ST NUCLEO-L152RE (`BOARD=nucleo-l152re`)
+- CAN update target: ST NUCLEO-F446RE (`BOARD=nucleo-f446re`)
 - User LED: LD2, green (PA5 / Arduino D13 on the current app)
 - CAN shield: Waveshare RS485 CAN Shield, CAN1 on PB8 (RX) and PB9 (TX)
 - Tested host adapter: Waveshare USB-CAN-A at 500 kbit/s
+
+The L152RE was used first to build and test the platform structure while the
+CAN-capable hardware was not yet available. The same architecture was then
+ported to the F446RE, whose native CAN controller is used for the working CAN
+firmware-update path. Both boards remain build targets; CAN support is specific
+to the F446RE configuration.
 
 ## Project Layout
 
@@ -22,13 +51,13 @@ and host-side unit tests.
 ├── config.mk              # Board selection and shared project settings
 ├── boards/                # Board-specific build configuration
 ├── Makefile               # Top-level orchestrator
-├── bootloader/            # Bootloader (0x08000000, 64KB)
+├── bootloader/            # Board-specific bootloader and update runtime
 │   ├── src/
 │   ├── test/
 │   ├── linker.ld
 │   └── Makefile
 ├── apps/
-│   └── vibe/              # Main application, currently linked for slot A
+│   └── vibe/              # Relocatable reference application
 │       ├── src/
 │       │   ├── main.c
 │       │   ├── led_task.c / .h
@@ -560,6 +589,11 @@ GitHub Actions runs on every push to `main` and on pull requests. Two steps run 
 2. **Run unit tests** — compiles tests with host `gcc` + mock HAL, runs them
 
 The container image is rebuilt and pushed to GHCR automatically when `Containerfile` changes. Trigger a manual rebuild from the Actions tab → "Publish build image".
+
+CI currently validates compilation and host-side tests only. It does not
+control a physical STM32 target, CAN adapter, reset line, or power supply. A
+passing CI run therefore does not replace the missing HIL test runner described
+above.
 
 ## Adding a New App
 
